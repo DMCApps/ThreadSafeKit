@@ -1,0 +1,84 @@
+import Foundation
+
+/// DispatchQueue-backed alternative to ``ArrayActor``.
+/// Uses a concurrent queue with barrier writes: reads run in parallel, writes are exclusive.
+public final class ArrayQueue<Element: Sendable>: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.threadsafekit.arrayqueue", attributes: .concurrent)
+    private var storage: [Element]
+
+    public init() {
+        storage = []
+    }
+
+    public init(_ elements: some Sequence<Element>) {
+        storage = Array(elements)
+    }
+
+    public var count: Int {
+        queue.sync { storage.count }
+    }
+
+    public var isEmpty: Bool {
+        queue.sync { storage.isEmpty }
+    }
+
+    public var first: Element? {
+        queue.sync { storage.first }
+    }
+
+    public var last: Element? {
+        queue.sync { storage.last }
+    }
+
+    public var elements: [Element] {
+        queue.sync { storage }
+    }
+
+    public func append(_ newElement: Element) {
+        queue.sync(flags: .barrier) {
+            storage.append(newElement)
+        }
+    }
+
+    public func push(_ newElement: Element) {
+        queue.sync(flags: .barrier) {
+            storage.insert(newElement, at: 0)
+        }
+    }
+
+    public func pop() -> Element? {
+        queue.sync(flags: .barrier) {
+            storage.popLast()
+        }
+    }
+
+    @discardableResult
+    public func remove(at index: Int) -> Element {
+        queue.sync(flags: .barrier) {
+            storage.remove(at: index)
+        }
+    }
+
+    public func removeAll(keepingCapacity keepCapacity: Bool = false) {
+        queue.sync(flags: .barrier) {
+            storage.removeAll(keepingCapacity: keepCapacity)
+        }
+    }
+
+    public func forEach(_ body: (Element) throws -> Void) rethrows {
+        try queue.sync { try storage.forEach(body) }
+    }
+
+    public func map<T>(_ transform: (Element) throws -> T) rethrows -> [T] {
+        try queue.sync { try storage.map(transform) }
+    }
+
+    public subscript(index: Int) -> Element {
+        get { queue.sync { storage[index] } }
+        set { queue.sync(flags: .barrier) { storage[index] = newValue } }
+    }
+
+    public subscript(safe index: Int) -> Element? {
+        queue.sync { storage.indices.contains(index) ? storage[index] : nil }
+    }
+}
