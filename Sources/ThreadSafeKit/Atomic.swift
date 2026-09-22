@@ -10,6 +10,7 @@ public final class Atomic<Value: Sendable>: Sendable {
 
     public var wrappedValue: Value {
         get { lock.withLock { $0 } }
+        @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
         set { lock.withLock { $0 = newValue } }
     }
 

@@ -12,6 +12,7 @@ public final class AtomicQueue<Value: Sendable>: @unchecked Sendable {
 
     public var wrappedValue: Value {
         get { queue.sync { value } }
+        @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
         set { queue.sync { value = newValue } }
     }
 

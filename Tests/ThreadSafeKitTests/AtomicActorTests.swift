@@ -8,9 +8,9 @@ import Testing
     #expect(await counter.get() == 1)
 }
 
-@Test func atomicActorSetAndGet() async throws {
+@Test func atomicActorMutateAndGet() async throws {
     let value = AtomicActor(1)
-    await value.set(2)
+    await value.mutate { $0 = 2 }
     #expect(await value.get() == 2)
 }
 

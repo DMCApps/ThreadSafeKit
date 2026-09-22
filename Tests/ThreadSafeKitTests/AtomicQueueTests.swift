@@ -8,9 +8,9 @@ import Testing
     #expect(counter == 1)
 }
 
-@Test func atomicQueueWrappedValueGetSet() throws {
+@Test func atomicQueueWrappedValueGetMutate() throws {
     @AtomicQueue var value = 1
-    value = 2
+    _value.mutate { $0 = 2 }
     #expect(value == 2)
 }
 

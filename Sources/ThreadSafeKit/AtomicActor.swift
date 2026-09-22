@@ -10,6 +10,7 @@ public actor AtomicActor<Value: Sendable> {
         value
     }
 
+    @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
     public func set(_ newValue: Value) {
         value = newValue
     }
