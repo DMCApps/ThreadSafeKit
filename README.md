@@ -60,6 +60,35 @@ dict.setValue(1, forKey: "a")
 
 Pick actor types when the caller is already async; pick lock/queue types when it isn't.
 
+### Compound operations with `mutate`
+
+Every type's individual calls (`append`, `setValue`, subscripts, …) are atomic on their own, but two separate calls are not atomic *together* — a read followed by a write can race with another caller's write in between:
+
+```swift
+// NOT safe: another writer can slip in between these two calls
+if await dict.getValue(forKey: "x") == nil {
+    await dict.setValue(1, forKey: "x")
+}
+```
+
+`mutate(_:)` holds the lock/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
+
+```swift
+await dict.mutate { storage in
+    if storage["x"] == nil {
+        storage["x"] = 1
+    }
+}
+
+await list.mutate { elements in
+    elements.append(elements.count)   // check-then-act, race-free
+}
+
+counter.mutate { $0 += 1 }   // Atomic/AtomicQueue already worked this way
+```
+
+**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
+
 ## Testing
 
 ```
