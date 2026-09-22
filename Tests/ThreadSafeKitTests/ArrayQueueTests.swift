@@ -99,3 +99,40 @@ import Testing
     }
     #expect(array.count == concurrencyIterations)
 }
+
+@Test func arrayQueueMutateReturnsValueAndMutates() throws {
+    let array = ArrayQueue([1, 2, 3])
+    let sum = array.mutate { elements in
+        let total = elements.reduce(0, +)
+        elements.append(total)
+        return total
+    }
+    #expect(sum == 6)
+    #expect(array.elements == [1, 2, 3, 6])
+}
+
+// Each iteration reads the current count then appends it (check-then-act). If `mutate`
+// didn't hold the barrier lock for the whole closure, two iterations could read the same
+// count and append duplicate values, leaving gaps/dupes instead of a clean permutation of 0..<N.
+@Test func arrayQueueMutateIsAtomicAcrossCompoundOperations() throws {
+    let array = ArrayQueue<Int>()
+    DispatchQueue.concurrentPerform(iterations: concurrencyIterations) { _ in
+        array.mutate { elements in
+            elements.append(elements.count)
+        }
+    }
+    #expect(array.elements.sorted() == Array(0..<concurrencyIterations))
+}
+
+// Demonstrates the exact problem `mutate` fixes: reading `count` then appending
+// as two separate queue syncs lets both reads observe the same stale count,
+// producing a duplicate instead of a clean sequence. A single `mutate` call
+// doesn't have this problem because both steps happen under one queue sync.
+@Test func arrayQueueSeparateCountAndAppendCanProduceDuplicates() throws {
+    let array = ArrayQueue<Int>()
+    let countA = array.count
+    let countB = array.count
+    array.append(countA)
+    array.append(countB)
+    #expect(array.elements == [0, 0])
+}

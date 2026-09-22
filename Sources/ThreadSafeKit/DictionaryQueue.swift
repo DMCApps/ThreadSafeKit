@@ -66,4 +66,10 @@ public final class DictionaryQueue<Key: Hashable & Sendable, Value: Sendable>: @
         get { queue.sync { storage[key] } }
         set { queue.sync(flags: .barrier) { storage[key] = newValue } }
     }
+
+    /// Runs `body` as a single unit of work under the write lock, so compound
+    /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
+    public func mutate<T>(_ body: (inout [Key: Value]) throws -> T) rethrows -> T {
+        try queue.sync(flags: .barrier) { try body(&storage) }
+    }
 }

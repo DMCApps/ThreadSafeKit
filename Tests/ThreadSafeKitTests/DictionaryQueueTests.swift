@@ -93,3 +93,39 @@ import Testing
     }
     #expect(dictionary.count == concurrencyIterations)
 }
+
+@Test func dictionaryQueueMutateReturnsValueAndMutates() throws {
+    let dictionary = DictionaryQueue(["a": 1])
+    let removed = dictionary.mutate { storage in
+        storage["b"] = 2
+        return storage.removeValue(forKey: "a")
+    }
+    #expect(removed == 1)
+    #expect(dictionary.dictionary == ["b": 2])
+}
+
+// Each iteration reads the current counter value then writes back the increment
+// (check-then-act). If `mutate` didn't hold the barrier lock for the whole closure,
+// concurrent increments could race and lose updates.
+@Test func dictionaryQueueMutateIsAtomicAcrossCompoundOperations() throws {
+    let dictionary = DictionaryQueue<String, Int>()
+    DispatchQueue.concurrentPerform(iterations: concurrencyIterations) { _ in
+        dictionary.mutate { storage in
+            storage["counter", default: 0] += 1
+        }
+    }
+    #expect(dictionary.getValue(forKey: "counter") == concurrencyIterations)
+}
+
+// Demonstrates the exact problem `mutate` fixes: reading then setting as two
+// separate queue syncs lets both reads observe the same stale value, losing
+// an update. A single `mutate` call doesn't have this problem because both
+// steps happen under one queue sync.
+@Test func dictionaryQueueSeparateGetAndSetCanLoseUpdates() throws {
+    let dictionary = DictionaryQueue<String, Int>()
+    let a = dictionary.getValue(forKey: "counter") ?? 0
+    let b = dictionary.getValue(forKey: "counter") ?? 0
+    dictionary.setValue(a + 1, forKey: "counter")
+    dictionary.setValue(b + 1, forKey: "counter")
+    #expect(dictionary.getValue(forKey: "counter") == 1)
+}

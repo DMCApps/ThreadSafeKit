@@ -52,4 +52,10 @@ public actor DictionaryActor<Key: Hashable & Sendable, Value: Sendable> {
     public subscript(key: Key) -> Value? {
         storage[key]
     }
+
+    /// Runs `body` as a single unit of work isolated to this actor, so compound
+    /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
+    public func mutate<T>(_ body: (inout [Key: Value]) throws -> T) rethrows -> T {
+        try body(&storage)
+    }
 }

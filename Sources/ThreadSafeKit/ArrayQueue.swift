@@ -81,4 +81,10 @@ public final class ArrayQueue<Element: Sendable>: @unchecked Sendable {
     public subscript(safe index: Int) -> Element? {
         queue.sync { storage.indices.contains(index) ? storage[index] : nil }
     }
+
+    /// Runs `body` as a single unit of work under the write lock, so compound
+    /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
+    public func mutate<T>(_ body: (inout [Element]) throws -> T) rethrows -> T {
+        try queue.sync(flags: .barrier) { try body(&storage) }
+    }
 }
