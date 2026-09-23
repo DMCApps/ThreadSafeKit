@@ -130,18 +130,10 @@ extension ThreadSafeDictionary: Equatable where Value: Equatable {
     }
 }
 
-// Dictionary itself has no Hashable conformance in the standard library (even when
-// Value: Hashable), since combining key/value hashes has to be order-independent.
-// XOR each entry's combined hash so iteration order doesn't affect the result.
+// Dictionary itself is Hashable where Value: Hashable, and hashes order-independently.
 extension ThreadSafeDictionary: Hashable where Value: Hashable {
     public func hash(into hasher: inout Hasher) {
-        let combined = dictionary.reduce(into: 0) { result, entry in
-            var entryHasher = Hasher()
-            entryHasher.combine(entry.key)
-            entryHasher.combine(entry.value)
-            result ^= entryHasher.finalize()
-        }
-        hasher.combine(combined)
+        hasher.combine(dictionary)
     }
 }
 

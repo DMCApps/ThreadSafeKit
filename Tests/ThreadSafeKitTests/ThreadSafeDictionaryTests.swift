@@ -186,8 +186,8 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect($values.count == 2)
 }
 
-// Hash must not depend on insertion/iteration order, since Dictionary itself has no
-// Hashable conformance and the implementation combines entries independently.
+// Hash must not depend on insertion/iteration order — regression test for stdlib
+// Dictionary's own order-independent Hashable conformance, which this forwards to.
 @Test func threadSafeDictionaryHashIsOrderIndependent() throws {
     var a = Hasher()
     ThreadSafeDictionary(["a": 1, "b": 2]).hash(into: &a)
