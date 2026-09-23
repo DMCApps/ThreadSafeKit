@@ -178,6 +178,14 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(ThreadSafeDictionary(["a": 1], mechanism: mechanism).description == "ThreadSafeDictionary([\"a\": 1])")
 }
 
+@Test(arguments: mechanisms) func threadSafeDictionaryPropertyWrapperReadsSnapshotAndProjectsInstance(mechanism: ThreadSafeMechanism) throws {
+    @ThreadSafeDictionary(mechanism: mechanism) var values = ["a": 1]
+    #expect(values == ["a": 1])
+    $values.setValue(2, forKey: "b")
+    #expect(values == ["a": 1, "b": 2])
+    #expect($values.count == 2)
+}
+
 // Hash must not depend on insertion/iteration order, since Dictionary itself has no
 // Hashable conformance and the implementation combines entries independently.
 @Test func threadSafeDictionaryHashIsOrderIndependent() throws {

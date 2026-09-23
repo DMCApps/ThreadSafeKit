@@ -182,3 +182,11 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
 @Test(arguments: mechanisms) func threadSafeArrayDescriptionContainsElements(mechanism: ThreadSafeMechanism) throws {
     #expect(ThreadSafeArray([1, 2, 3], mechanism: mechanism).description == "ThreadSafeArray([1, 2, 3])")
 }
+
+@Test(arguments: mechanisms) func threadSafeArrayPropertyWrapperReadsSnapshotAndProjectsInstance(mechanism: ThreadSafeMechanism) throws {
+    @ThreadSafeArray(mechanism: mechanism) var items = [1, 2, 3]
+    #expect(items == [1, 2, 3])
+    $items.append(4)
+    #expect(items == [1, 2, 3, 4])
+    #expect($items.count == 4)
+}

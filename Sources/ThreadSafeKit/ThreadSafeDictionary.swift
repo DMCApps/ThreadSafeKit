@@ -3,6 +3,11 @@ import os
 
 /// Lock/queue-backed alternative to ``DictionaryActor``. Pick the backing mechanism via ``ThreadSafeMechanism``;
 /// defaults to a concurrent `DispatchQueue` with barrier writes (reads run in parallel, writes are exclusive).
+///
+/// Also usable as a property wrapper: `wrappedValue` is a plain-dictionary snapshot (read-only — direct
+/// assignment isn't atomic across read-modify-write), and `projectedValue` is this instance itself, so
+/// `$name` gives `setValue`/`mutate`/subscript/etc.
+@propertyWrapper
 public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable>: @unchecked Sendable {
     private final class Box<T> {
         var value: T
@@ -23,6 +28,10 @@ public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
         case .dispatchQueue:
             backing = .queue(DispatchQueue(label: "com.threadsafekit.dictionary", attributes: .concurrent), Box(dictionary))
         }
+    }
+
+    public convenience init(wrappedValue: [Key: Value], mechanism: ThreadSafeMechanism = .dispatchQueue) {
+        self.init(wrappedValue, mechanism: mechanism)
     }
 
     private func read<T: Sendable>(_ body: @Sendable (inout [Key: Value]) throws -> T) rethrows -> T {
@@ -53,6 +62,16 @@ public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
 
     public var dictionary: [Key: Value] {
         read { $0 }
+    }
+
+    public var wrappedValue: [Key: Value] {
+        get { dictionary }
+        @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use $name's setValue/mutate/etc. instead")
+        set {}
+    }
+
+    public var projectedValue: ThreadSafeDictionary<Key, Value> {
+        self
     }
 
     public func getValue(forKey key: Key) -> Value? {

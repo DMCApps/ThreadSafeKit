@@ -20,8 +20,8 @@ Three storage kinds (single value, array, dictionary), each with two backends:
 | Kind | Actor (async) | Lock/queue (sync) |
 |---|---|---|
 | Single value | `AtomicActor<Value>` | `ThreadSafeAtomic<Value>` (property wrapper) |
-| Array | `ArrayActor<Element>` | `ThreadSafeArray<Element>` |
-| Dictionary | `DictionaryActor<Key, Value>` | `ThreadSafeDictionary<Key, Value>` |
+| Array | `ArrayActor<Element>` | `ThreadSafeArray<Element>` (also usable as a property wrapper) |
+| Dictionary | `DictionaryActor<Key, Value>` | `ThreadSafeDictionary<Key, Value>` (also usable as a property wrapper) |
 
 **Actor types** — `AtomicActor`, `ArrayActor`, `DictionaryActor`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction.
 
@@ -48,20 +48,20 @@ All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setV
 
 ```swift
 @ThreadSafeAtomic var counter = 0
-counter.mutate { $0 += 1 }
+_counter.mutate { $0 += 1 }
 
-let cache = ThreadSafeAtomic(wrappedValue: [String: Int](), mechanism: .lock)
-cache.mutate { $0["key"] = 1 }
+@ThreadSafeArray var items = [1, 2, 3]
+$items.append(4)   // items == [1, 2, 3, 4]
+
+@ThreadSafeDictionary(mechanism: .lock) var cache = ["key": 1]
+$cache.setValue(2, forKey: "other")   // cache == ["key": 1, "other": 2]
 
 let list = ArrayActor<Int>()
 await list.append(1)
 let all = await list.elements
-
-let dict = ThreadSafeDictionary<String, Int>()
-dict.setValue(1, forKey: "a")
 ```
 
-Pick actor types when the caller is already async; pick lock/queue types when it isn't.
+Pick actor types when the caller is already async; pick lock/queue types when it isn't. `ThreadSafeArray`/`ThreadSafeDictionary` also work as plain instances (`let list = ThreadSafeArray<Int>()`) when you don't want property-wrapper sugar.
 
 ### Compound operations with `mutate`
 

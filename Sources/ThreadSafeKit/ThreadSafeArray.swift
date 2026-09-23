@@ -3,6 +3,11 @@ import os
 
 /// Lock/queue-backed alternative to ``ArrayActor``. Pick the backing mechanism via ``ThreadSafeMechanism``;
 /// defaults to a concurrent `DispatchQueue` with barrier writes (reads run in parallel, writes are exclusive).
+///
+/// Also usable as a property wrapper: `wrappedValue` is a plain-array snapshot (read-only — direct
+/// assignment isn't atomic across read-modify-write), and `projectedValue` is this instance itself, so
+/// `$name` gives `append`/`mutate`/subscript/etc.
+@propertyWrapper
 public final class ThreadSafeArray<Element: Sendable>: @unchecked Sendable {
     private final class Box<T> {
         var value: T
@@ -18,6 +23,10 @@ public final class ThreadSafeArray<Element: Sendable>: @unchecked Sendable {
 
     public convenience init(mechanism: ThreadSafeMechanism = .dispatchQueue) {
         self.init([], mechanism: mechanism)
+    }
+
+    public convenience init(wrappedValue: [Element], mechanism: ThreadSafeMechanism = .dispatchQueue) {
+        self.init(wrappedValue, mechanism: mechanism)
     }
 
     public init(_ elements: some Sequence<Element>, mechanism: ThreadSafeMechanism = .dispatchQueue) {
@@ -66,6 +75,16 @@ public final class ThreadSafeArray<Element: Sendable>: @unchecked Sendable {
 
     public var elements: [Element] {
         read { $0 }
+    }
+
+    public var wrappedValue: [Element] {
+        get { elements }
+        @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use $name's append/mutate/etc. instead")
+        set {}
+    }
+
+    public var projectedValue: ThreadSafeArray<Element> {
+        self
     }
 
     public func append(_ newElement: Element) {
