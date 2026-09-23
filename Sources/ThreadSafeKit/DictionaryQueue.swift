@@ -74,6 +74,12 @@ public final class DictionaryQueue<Key: Hashable & Sendable, Value: Sendable>: @
     }
 }
 
+extension DictionaryQueue: CustomStringConvertible {
+    public var description: String {
+        "DictionaryQueue(\(dictionary))"
+    }
+}
+
 extension DictionaryQueue: Equatable where Value: Equatable {
     public static func == (lhs: DictionaryQueue, rhs: DictionaryQueue) -> Bool {
         lhs.dictionary == rhs.dictionary

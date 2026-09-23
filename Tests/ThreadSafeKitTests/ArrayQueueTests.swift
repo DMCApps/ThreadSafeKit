@@ -176,3 +176,7 @@ import Testing
     let set: Set<ArrayQueue<Int>> = [ArrayQueue([1, 2]), ArrayQueue([1, 2]), ArrayQueue([3])]
     #expect(set.count == 2)
 }
+
+@Test func arrayQueueDescriptionContainsElements() throws {
+    #expect(ArrayQueue([1, 2, 3]).description == "ArrayQueue([1, 2, 3])")
+}

@@ -176,3 +176,7 @@ import Testing
     let set: Set<ArrayLock<Int>> = [ArrayLock([1, 2]), ArrayLock([1, 2]), ArrayLock([3])]
     #expect(set.count == 2)
 }
+
+@Test func arrayLockDescriptionContainsElements() throws {
+    #expect(ArrayLock([1, 2, 3]).description == "ArrayLock([1, 2, 3])")
+}

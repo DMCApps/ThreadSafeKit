@@ -170,6 +170,10 @@ import Testing
     #expect(set.count == 2)
 }
 
+@Test func dictionaryQueueDescriptionContainsDictionary() throws {
+    #expect(DictionaryQueue(["a": 1]).description == "DictionaryQueue([\"a\": 1])")
+}
+
 // Hash must not depend on insertion/iteration order, since Dictionary itself has no
 // Hashable conformance and the implementation combines entries independently.
 @Test func dictionaryQueueHashIsOrderIndependent() throws {

@@ -64,6 +64,12 @@ public final class DictionaryLock<Key: Hashable & Sendable, Value: Sendable>: Se
     }
 }
 
+extension DictionaryLock: CustomStringConvertible {
+    public var description: String {
+        "DictionaryLock(\(dictionary))"
+    }
+}
+
 extension DictionaryLock: Equatable where Value: Equatable {
     public static func == (lhs: DictionaryLock, rhs: DictionaryLock) -> Bool {
         lhs.dictionary == rhs.dictionary

@@ -77,6 +77,12 @@ public final class ArrayLock<Element: Sendable>: Sendable {
     }
 }
 
+extension ArrayLock: CustomStringConvertible {
+    public var description: String {
+        "ArrayLock(\(elements))"
+    }
+}
+
 extension ArrayLock: Equatable where Element: Equatable {
     public static func == (lhs: ArrayLock, rhs: ArrayLock) -> Bool {
         lhs.elements == rhs.elements

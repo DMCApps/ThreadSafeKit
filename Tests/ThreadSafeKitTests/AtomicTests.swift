@@ -73,3 +73,7 @@ import Testing
     let set: Set<Atomic<Int>> = [Atomic(wrappedValue: 1), Atomic(wrappedValue: 1), Atomic(wrappedValue: 2)]
     #expect(set.count == 2)
 }
+
+@Test func atomicDescriptionContainsWrappedValue() throws {
+    #expect(Atomic(wrappedValue: 42).description == "Atomic(42)")
+}

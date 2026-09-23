@@ -89,6 +89,12 @@ public final class ArrayQueue<Element: Sendable>: @unchecked Sendable {
     }
 }
 
+extension ArrayQueue: CustomStringConvertible {
+    public var description: String {
+        "ArrayQueue(\(elements))"
+    }
+}
+
 extension ArrayQueue: Equatable where Element: Equatable {
     public static func == (lhs: ArrayQueue, rhs: ArrayQueue) -> Bool {
         lhs.elements == rhs.elements

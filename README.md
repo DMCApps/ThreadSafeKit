@@ -29,6 +29,8 @@ Three storage kinds (single value, array, dictionary), each with two backends:
 
 When the wrapped `Value`/`Element`/`Key`+`Value` is `Codable`, so is the lock/queue-backed wrapper itself (`Atomic`, `AtomicQueue`, `ArrayLock`, `ArrayQueue`, `DictionaryLock`, `DictionaryQueue`). Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `get()`/`elements`/`dictionary` and restore via `init(_:)`/compare or hash the plain value at the call site instead.
 
+Lock/queue-backed types also conform to `CustomStringConvertible` unconditionally — `description` prints the wrapper name plus its current contents (e.g. `Atomic(42)`, `ArrayLock([1, 2, 3])`), useful in `print`/`po`. Actor types don't get this either, for the same synchronous-access reason.
+
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
 
 ### When to use which

@@ -21,6 +21,12 @@ public final class AtomicQueue<Value: Sendable>: @unchecked Sendable {
     }
 }
 
+extension AtomicQueue: CustomStringConvertible {
+    public var description: String {
+        "AtomicQueue(\(wrappedValue))"
+    }
+}
+
 extension AtomicQueue: Equatable where Value: Equatable {
     public static func == (lhs: AtomicQueue, rhs: AtomicQueue) -> Bool {
         lhs.wrappedValue == rhs.wrappedValue

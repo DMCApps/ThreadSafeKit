@@ -19,6 +19,12 @@ public final class Atomic<Value: Sendable>: Sendable {
     }
 }
 
+extension Atomic: CustomStringConvertible {
+    public var description: String {
+        "Atomic(\(wrappedValue))"
+    }
+}
+
 extension Atomic: Equatable where Value: Equatable {
     public static func == (lhs: Atomic, rhs: Atomic) -> Bool {
         lhs.wrappedValue == rhs.wrappedValue
