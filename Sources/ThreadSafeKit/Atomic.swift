@@ -18,3 +18,15 @@ public final class Atomic<Value: Sendable>: Sendable {
         lock.withLock(mutation)
     }
 }
+
+extension Atomic: Codable where Value: Codable {
+    public convenience init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(wrappedValue: try container.decode(Value.self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(wrappedValue)
+    }
+}

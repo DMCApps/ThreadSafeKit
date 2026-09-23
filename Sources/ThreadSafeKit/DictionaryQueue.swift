@@ -73,3 +73,15 @@ public final class DictionaryQueue<Key: Hashable & Sendable, Value: Sendable>: @
         try queue.sync(flags: .barrier) { try body(&storage) }
     }
 }
+
+extension DictionaryQueue: Codable where Key: Codable, Value: Codable {
+    public convenience init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(try container.decode([Key: Value].self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(dictionary)
+    }
+}

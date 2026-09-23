@@ -136,3 +136,22 @@ import Testing
     array.append(countB)
     #expect(array.elements == [0, 0])
 }
+
+@Test func arrayQueueCodableRoundTrip() throws {
+    let array = ArrayQueue(["a", "b", "c"])
+    let data = try JSONEncoder().encode(array)
+    let decoded = try JSONDecoder().decode(ArrayQueue<String>.self, from: data)
+    #expect(decoded.elements == ["a", "b", "c"])
+}
+
+// Auto-synthesized Codable on a containing type only compiles because
+// ArrayQueue<String> conforms to Codable; this is the whole point of the feature.
+@Test func arrayQueueCodableRoundTripInsideContainingType() throws {
+    struct Container: Codable {
+        let items: ArrayQueue<String>
+    }
+    let container = Container(items: ArrayQueue(["x", "y"]))
+    let data = try JSONEncoder().encode(container)
+    let decoded = try JSONDecoder().decode(Container.self, from: data)
+    #expect(decoded.items.elements == ["x", "y"])
+}

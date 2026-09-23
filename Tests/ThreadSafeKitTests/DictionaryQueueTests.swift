@@ -129,3 +129,22 @@ import Testing
     dictionary.setValue(b + 1, forKey: "counter")
     #expect(dictionary.getValue(forKey: "counter") == 1)
 }
+
+@Test func dictionaryQueueCodableRoundTrip() throws {
+    let dictionary = DictionaryQueue(["a": 1, "b": 2])
+    let data = try JSONEncoder().encode(dictionary)
+    let decoded = try JSONDecoder().decode(DictionaryQueue<String, Int>.self, from: data)
+    #expect(decoded.dictionary == ["a": 1, "b": 2])
+}
+
+// Auto-synthesized Codable on a containing type only compiles because
+// DictionaryQueue<String, Int> conforms to Codable; this is the whole point of the feature.
+@Test func dictionaryQueueCodableRoundTripInsideContainingType() throws {
+    struct Container: Codable {
+        let values: DictionaryQueue<String, Int>
+    }
+    let container = Container(values: DictionaryQueue(["a": 1]))
+    let data = try JSONEncoder().encode(container)
+    let decoded = try JSONDecoder().decode(Container.self, from: data)
+    #expect(decoded.values.dictionary == ["a": 1])
+}

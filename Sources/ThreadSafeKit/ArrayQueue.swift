@@ -88,3 +88,15 @@ public final class ArrayQueue<Element: Sendable>: @unchecked Sendable {
         try queue.sync(flags: .barrier) { try body(&storage) }
     }
 }
+
+extension ArrayQueue: Codable where Element: Codable {
+    public convenience init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self.init(try container.decode([Element].self))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(elements)
+    }
+}

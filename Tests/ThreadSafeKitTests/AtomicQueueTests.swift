@@ -34,3 +34,22 @@ import Testing
     counter.mutate { $0 = b + 1 }
     #expect(counter.wrappedValue == 1)
 }
+
+@Test func atomicQueueCodableRoundTrip() throws {
+    let counter = AtomicQueue(wrappedValue: 42)
+    let data = try JSONEncoder().encode(counter)
+    let decoded = try JSONDecoder().decode(AtomicQueue<Int>.self, from: data)
+    #expect(decoded.wrappedValue == 42)
+}
+
+// Auto-synthesized Codable on a containing type only compiles because
+// AtomicQueue<Int> conforms to Codable; this is the whole point of the feature.
+@Test func atomicQueueCodableRoundTripInsideContainingType() throws {
+    struct Container: Codable {
+        let counter: AtomicQueue<Int>
+    }
+    let container = Container(counter: AtomicQueue(wrappedValue: 7))
+    let data = try JSONEncoder().encode(container)
+    let decoded = try JSONDecoder().decode(Container.self, from: data)
+    #expect(decoded.counter.wrappedValue == 7)
+}
