@@ -20,15 +20,16 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     }
 
     private let backing: Backing
-    // Only used by the `.queue` mechanism — the `.lock` mechanism keeps its state inside the
-    // `OSAllocatedUnfairLock` instead, and only ever touches this through `read`/`write`.
-    private var storage: Value
+    // Only used by the `.queue` mechanism — nil under `.lock`, since the lock holds the state itself
+    // and only ever touches this through `read`/`write`. Keeping it nil (rather than a duplicate copy
+    // of `wrappedValue`) avoids retaining a permanent, unreachable second copy for the object's lifetime.
+    private var storage: Value?
 
     public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .dispatchQueue) {
         switch mechanism {
         case .lock:
             backing = .lock(OSAllocatedUnfairLock(initialState: wrappedValue))
-            storage = wrappedValue
+            storage = nil
         case .dispatchQueue:
             backing = .queue(DispatchQueue(label: "com.threadsafekit.\(Value.self)", attributes: .concurrent))
             storage = wrappedValue
@@ -39,17 +40,26 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         self.init(wrappedValue: value, mechanism: mechanism)
     }
 
-    func read<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
+    // Takes `Value`, not `inout Value`: this runs on the queue path via a plain (non-barrier) `sync`,
+    // so concurrent reads can overlap on a concurrent queue. An `inout` parameter there registers
+    // overlapping exclusive accesses to `storage` — a real data race the exclusivity checker/TSan both
+    // catch. A by-value snapshot keeps concurrent reads to genuinely non-exclusive access.
+    func read<T: Sendable>(_ body: @Sendable (Value) throws -> T) rethrows -> T {
         switch backing {
-        case .lock(let lock): return try lock.withLock(body)
-        case .queue(let queue): return try queue.sync { try body(&storage) }
+        case .lock(let lock): return try lock.withLock { try body($0) }
+        case .queue(let queue): return try queue.sync { try body(storage!) }
         }
     }
 
     func write<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         switch backing {
         case .lock(let lock): return try lock.withLock(body)
-        case .queue(let queue): return try queue.sync(flags: .barrier) { try body(&storage) }
+        case .queue(let queue):
+            return try queue.sync(flags: .barrier) {
+                var value = storage!
+                defer { storage = value }
+                return try body(&value)
+            }
         }
     }
 
@@ -63,6 +73,11 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
 
     /// Runs `body` as a single unit of work under the lock/queue, so compound
     /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
+    ///
+    /// Don't call back into this same instance (`mutate`, `read`-backed members like `count`/`elements`,
+    /// or any other shape member) from within `body` — the lock/queue is already held, and re-entry
+    /// deadlocks under `.lock` (`OSAllocatedUnfairLock` isn't recursive) or traps under `.dispatchQueue`
+    /// (a nested barrier `sync` on the same queue).
     public func mutate<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         try write(body)
     }
