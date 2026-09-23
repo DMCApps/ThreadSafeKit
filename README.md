@@ -15,21 +15,23 @@ Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendabl
 
 ## Types
 
-One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.dispatchQueue`): `.lock` (`OSAllocatedUnfairLock`, real/checked `Sendable`, low-contention short critical sections) or `.dispatchQueue` (concurrent queue + barrier writes — reads run in parallel, writes are exclusive; `@unchecked Sendable`, safety enforced internally, not by the compiler).
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.dispatchQueue`): `.lock` (`OSAllocatedUnfairLock`, low-contention short critical sections) or `.dispatchQueue` (concurrent queue + barrier writes — reads run in parallel, writes are exclusive). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking/queueing) rather than by the compiler either way.
 
 `Value`'s shape determines which members are available, added via constrained extensions:
 
 | `Value` shape | Members |
 |---|---|
-| Any `Sendable` | `wrappedValue`, `mutate(_:)` |
-| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)` |
+| Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
+| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
 | `BidirectionalCollection` | + `first`, `last` |
-| `RangeReplaceableCollection` | + `append`, `push`, `removeAll`, `remove(at:)`, init with no initial value, init from any `Sequence` |
+| `RangeReplaceableCollection` | + `elements`, `append`, `push`, `removeAll`, `remove(at:)`*, init with no initial value, init from any `Sequence` |
 | `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()` |
-| `MutableCollection` | + `subscript(index:)` (get/set) |
+| `MutableCollection` | + `subscript(index:)`* (get/set) |
 | Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `removeAll`, `merge`, `subscript(key:)`, init with no initial value |
 
-`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`reduce`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` and `ThreadSafe<Set<Int>>` both get `Collection` members (e.g. `ThreadSafe("hello").count == 5`).
+\* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
+
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` and `ThreadSafe<Set<Int>>` both get `Collection` members (e.g. `ThreadSafe("hello").count == 5`).
 
 Alongside `ThreadSafe<Value>`, three real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, and `ThreadSafeAtomic<Value>`:
 
@@ -41,7 +43,7 @@ Alongside `ThreadSafe<Value>`, three real actors cover the async case — `Threa
 
 **Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/atomic names belong exclusively to the actors.
 
-When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism. Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/direct `await` and restore via `init(_:)`, or compare/hash the plain value at the call site instead.
+When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a `.dispatchQueue`-backed instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare/hash the plain value at the call site instead.
 
 `ThreadSafe<Value>` conforms to `CustomStringConvertible` unconditionally — `description` prints `ThreadSafe(<contents>)` (e.g. `ThreadSafe(42)`, `ThreadSafe([1, 2, 3])`), the same generic form regardless of shape. Actor types don't get this either, for the same synchronous-access reason.
 
@@ -90,6 +92,7 @@ await list.mutate { elements in
     elements.append(elements.count)   // check-then-act, race-free
 }
 
+let counter = ThreadSafe(wrappedValue: 0)
 counter.mutate { $0 += 1 }   // ThreadSafe already works this way, regardless of mechanism
 ```
 
