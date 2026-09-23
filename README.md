@@ -20,12 +20,14 @@ Three storage kinds (single value, array, dictionary), each with two backends:
 | Kind | Actor (async) | Lock/queue (sync) |
 |---|---|---|
 | Single value | `AtomicActor<Value>` | `Atomic<Value>` (lock, property wrapper), `AtomicQueue<Value>` (serial queue, property wrapper) |
-| Array | `ArrayActor<Element>` | `ArrayQueue<Element>` (concurrent queue, barrier writes) |
-| Dictionary | `DictionaryActor<Key, Value>` | `DictionaryQueue<Key, Value>` (concurrent queue, barrier writes) |
+| Array | `ArrayActor<Element>` | `ArrayLock<Element>` (unfair lock), `ArrayQueue<Element>` (concurrent queue, barrier writes) |
+| Dictionary | `DictionaryActor<Key, Value>` | `DictionaryLock<Key, Value>` (unfair lock), `DictionaryQueue<Key, Value>` (concurrent queue, barrier writes) |
 
 **Actor types** — `AtomicActor`, `ArrayActor`, `DictionaryActor`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction.
 
-**Sync types** — `Atomic` (unfair lock), `AtomicQueue` (serial `DispatchQueue`), `ArrayQueue`/`DictionaryQueue` (concurrent `DispatchQueue` + barrier writes): no `await` needed, useful where sync access required (e.g. property wrapper on a non-async type). `@unchecked Sendable` — safety enforced internally, not by the compiler.
+**Sync types** — `Atomic`/`ArrayLock`/`DictionaryLock` (unfair lock), `AtomicQueue` (serial `DispatchQueue`), `ArrayQueue`/`DictionaryQueue` (concurrent `DispatchQueue` + barrier writes): no `await` needed, useful where sync access required (e.g. property wrapper on a non-async type). Lock-backed types are real (checked) `Sendable`; queue-backed types are `@unchecked Sendable` — safety enforced internally, not by the compiler.
+
+When the wrapped `Value`/`Element`/`Key`+`Value` is `Codable`, so is the lock/queue-backed wrapper itself (`Atomic`, `AtomicQueue`, `ArrayLock`, `ArrayQueue`, `DictionaryLock`, `DictionaryQueue`). Actor types are intentionally not `Codable` — `Encodable.encode(to:)` is synchronous and can't `await` actor-isolated state; snapshot via `get()`/`elements`/`dictionary` and restore via `init(_:)` at the call site instead.
 
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
 
@@ -36,8 +38,10 @@ All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setV
 | `Atomic<Value>` | unfair lock, property wrapper | Sync single-value state guarded by a lock; low-contention, short critical sections (counters, flags, config snapshots). |
 | `AtomicQueue<Value>` | serial `DispatchQueue`, property wrapper | Sync single-value state, want queue semantics (e.g. FIFO ordering, QoS control) instead of a raw lock. |
 | `AtomicActor<Value>` | actor | Single-value state owned by async code; callers already `await`. |
+| `ArrayLock<Element>` | unfair lock | Sync array access from non-async code; low-contention, short critical sections. |
 | `ArrayQueue<Element>` | concurrent `DispatchQueue` + barrier | Sync array access from non-async code; many concurrent reads, occasional writes. |
 | `ArrayActor<Element>` | actor | Array state owned by async code. |
+| `DictionaryLock<Key, Value>` | unfair lock | Sync dictionary/cache access from non-async code; low-contention, short critical sections. |
 | `DictionaryQueue<Key, Value>` | concurrent `DispatchQueue` + barrier | Sync dictionary/cache access from non-async code; many concurrent reads, occasional writes. |
 | `DictionaryActor<Key, Value>` | actor | Dictionary/cache state owned by async code. |
 
