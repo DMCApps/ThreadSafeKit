@@ -27,6 +27,12 @@ extension AtomicQueue: Equatable where Value: Equatable {
     }
 }
 
+extension AtomicQueue: Hashable where Value: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(wrappedValue)
+    }
+}
+
 extension AtomicQueue: Codable where Value: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

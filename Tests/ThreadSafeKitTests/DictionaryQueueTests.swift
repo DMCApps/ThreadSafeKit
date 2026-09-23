@@ -164,3 +164,18 @@ import Testing
     #expect(Container(values: DictionaryQueue(["a": 1])) == Container(values: DictionaryQueue(["a": 1])))
     #expect(Container(values: DictionaryQueue(["a": 1])) != Container(values: DictionaryQueue(["a": 2])))
 }
+
+@Test func dictionaryQueueHashableUsableInSet() throws {
+    let set: Set<DictionaryQueue<String, Int>> = [DictionaryQueue(["a": 1]), DictionaryQueue(["a": 1]), DictionaryQueue(["a": 2])]
+    #expect(set.count == 2)
+}
+
+// Hash must not depend on insertion/iteration order, since Dictionary itself has no
+// Hashable conformance and the implementation combines entries independently.
+@Test func dictionaryQueueHashIsOrderIndependent() throws {
+    var a = Hasher()
+    DictionaryQueue(["a": 1, "b": 2]).hash(into: &a)
+    var b = Hasher()
+    DictionaryQueue(["b": 2, "a": 1]).hash(into: &b)
+    #expect(a.finalize() == b.finalize())
+}

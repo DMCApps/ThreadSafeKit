@@ -83,6 +83,12 @@ extension ArrayLock: Equatable where Element: Equatable {
     }
 }
 
+extension ArrayLock: Hashable where Element: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(elements)
+    }
+}
+
 extension ArrayLock: Codable where Element: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

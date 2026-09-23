@@ -25,6 +25,12 @@ extension Atomic: Equatable where Value: Equatable {
     }
 }
 
+extension Atomic: Hashable where Value: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(wrappedValue)
+    }
+}
+
 extension Atomic: Codable where Value: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

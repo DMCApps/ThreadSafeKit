@@ -27,7 +27,7 @@ Three storage kinds (single value, array, dictionary), each with two backends:
 
 **Sync types** — `Atomic`/`ArrayLock`/`DictionaryLock` (unfair lock), `AtomicQueue` (serial `DispatchQueue`), `ArrayQueue`/`DictionaryQueue` (concurrent `DispatchQueue` + barrier writes): no `await` needed, useful where sync access required (e.g. property wrapper on a non-async type). Lock-backed types are real (checked) `Sendable`; queue-backed types are `@unchecked Sendable` — safety enforced internally, not by the compiler.
 
-When the wrapped `Value`/`Element`/`Key`+`Value` is `Codable`, so is the lock/queue-backed wrapper itself (`Atomic`, `AtomicQueue`, `ArrayLock`, `ArrayQueue`, `DictionaryLock`, `DictionaryQueue`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `get()`/`elements`/`dictionary` and restore via `init(_:)`/compare the plain value at the call site instead.
+When the wrapped `Value`/`Element`/`Key`+`Value` is `Codable`, so is the lock/queue-backed wrapper itself (`Atomic`, `AtomicQueue`, `ArrayLock`, `ArrayQueue`, `DictionaryLock`, `DictionaryQueue`). Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `get()`/`elements`/`dictionary` and restore via `init(_:)`/compare or hash the plain value at the call site instead.
 
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
 
@@ -93,7 +93,7 @@ counter.mutate { $0 += 1 }   // Atomic/AtomicQueue already worked this way
 
 **What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
-### Codable and Equatable
+### Codable, Equatable, and Hashable
 
 Lock/queue-backed types conform conditionally — only when the wrapped type does:
 
@@ -105,12 +105,16 @@ let decoded = try JSONDecoder().decode(Atomic<Int>.self, from: data)
 let cache = DictionaryLock(["a": 1])
 cache == DictionaryLock(["a": 1])   // true
 
-struct Container: Codable, Equatable {
-    let items: ArrayLock<Int>   // synthesis works because ArrayLock<Int> is itself Codable/Equatable
+let seen: Set<ArrayLock<Int>> = [ArrayLock([1, 2]), ArrayLock([1, 2])]   // one element
+
+struct Container: Codable, Equatable, Hashable {
+    let items: ArrayLock<Int>   // synthesis works because ArrayLock<Int> is itself Codable/Equatable/Hashable
 }
 ```
 
-Actor types (`AtomicActor`, `ArrayActor`, `DictionaryActor`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
+`DictionaryLock`/`DictionaryQueue`'s `Hashable` combines each key/value pair's hash order-independently (XOR), since `Dictionary` itself has no `Hashable` conformance to delegate to.
+
+Actor types (`AtomicActor`, `ArrayActor`, `DictionaryActor`) don't conform to any of these — `Encodable.encode(to:)`, `==`, and `hash(into:)` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
 
 ```swift
 let snapshot = await list.elements

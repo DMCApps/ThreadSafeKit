@@ -164,3 +164,18 @@ import Testing
     #expect(Container(values: DictionaryLock(["a": 1])) == Container(values: DictionaryLock(["a": 1])))
     #expect(Container(values: DictionaryLock(["a": 1])) != Container(values: DictionaryLock(["a": 2])))
 }
+
+@Test func dictionaryLockHashableUsableInSet() throws {
+    let set: Set<DictionaryLock<String, Int>> = [DictionaryLock(["a": 1]), DictionaryLock(["a": 1]), DictionaryLock(["a": 2])]
+    #expect(set.count == 2)
+}
+
+// Hash must not depend on insertion/iteration order, since Dictionary itself has no
+// Hashable conformance and the implementation combines entries independently.
+@Test func dictionaryLockHashIsOrderIndependent() throws {
+    var a = Hasher()
+    DictionaryLock(["a": 1, "b": 2]).hash(into: &a)
+    var b = Hasher()
+    DictionaryLock(["b": 2, "a": 1]).hash(into: &b)
+    #expect(a.finalize() == b.finalize())
+}

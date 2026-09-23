@@ -68,3 +68,8 @@ import Testing
     #expect(Container(counter: Atomic(wrappedValue: 1)) == Container(counter: Atomic(wrappedValue: 1)))
     #expect(Container(counter: Atomic(wrappedValue: 1)) != Container(counter: Atomic(wrappedValue: 2)))
 }
+
+@Test func atomicHashableUsableInSet() throws {
+    let set: Set<Atomic<Int>> = [Atomic(wrappedValue: 1), Atomic(wrappedValue: 1), Atomic(wrappedValue: 2)]
+    #expect(set.count == 2)
+}

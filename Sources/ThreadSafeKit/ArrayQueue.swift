@@ -95,6 +95,12 @@ extension ArrayQueue: Equatable where Element: Equatable {
     }
 }
 
+extension ArrayQueue: Hashable where Element: Hashable {
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(elements)
+    }
+}
+
 extension ArrayQueue: Codable where Element: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

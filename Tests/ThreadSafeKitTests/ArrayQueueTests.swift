@@ -171,3 +171,8 @@ import Testing
     #expect(Container(items: ArrayQueue([1, 2])) == Container(items: ArrayQueue([1, 2])))
     #expect(Container(items: ArrayQueue([1, 2])) != Container(items: ArrayQueue([1, 3])))
 }
+
+@Test func arrayQueueHashableUsableInSet() throws {
+    let set: Set<ArrayQueue<Int>> = [ArrayQueue([1, 2]), ArrayQueue([1, 2]), ArrayQueue([3])]
+    #expect(set.count == 2)
+}
