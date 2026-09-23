@@ -3,8 +3,8 @@
 /// `init(from:)` could be implemented (actor initializers aren't async), but doing so
 /// alone would give asymmetric, surprising conformance, so it's left out too.
 /// To (de)serialize, snapshot/restore manually at the call site: encode `await elements`,
-/// decode into `ArrayActor(_:)`.
-public actor ArrayActor<Element: Sendable> {
+/// decode into `ThreadSafeArray(_:)`.
+public actor ThreadSafeArray<Element: Sendable> {
     private var storage: [Element]
 
     public init() {
