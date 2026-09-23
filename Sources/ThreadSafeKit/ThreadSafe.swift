@@ -76,8 +76,9 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     ///
     /// Don't call back into this same instance (`mutate`, `read`-backed members like `count`/`elements`,
     /// or any other shape member) from within `body` — the lock/queue is already held, and re-entry
-    /// deadlocks under `.lock` (`OSAllocatedUnfairLock` isn't recursive) or traps under `.dispatchQueue`
-    /// (a nested barrier `sync` on the same queue).
+    /// aborts under both mechanisms: `OSAllocatedUnfairLock` self-detects same-thread reentrancy and
+    /// traps ("Trying to recursively lock an os_unfair_lock"); `.dispatchQueue` traps via libdispatch
+    /// ("dispatch_sync called on queue already owned by current thread"). Neither hangs.
     public func mutate<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         try write(body)
     }

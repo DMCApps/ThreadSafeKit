@@ -251,10 +251,13 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 
 // MARK: - Reentrancy
 
-// Confirmed behaviour (measured, not assumed):
+// Confirmed behaviour (measured on real macOS/iOS processes, not assumed):
 //
-//   nested read  inside read   .lock          -> DEADLOCK (unfair lock is not recursive)
-//   nested read  inside read   .dispatchQueue -> now safe: `read` takes `storage` by value
+//   nested read  inside read   .lock          -> aborts immediately: os_unfair_lock
+//                                                self-detects same-thread reentrancy
+//                                                ("Trying to recursively lock an
+//                                                os_unfair_lock"). Does not hang.
+//   nested read  inside read   .dispatchQueue -> safe: `read` takes `storage` by value
 //                                                and runs a non-barrier `sync`, so nested
 //                                                non-barrier reads on the same concurrent
 //                                                queue no longer register overlapping
@@ -262,14 +265,21 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 //                                                with "Fatal access conflict detected"
 //                                                while `read` took `inout storage` — see
 //                                                the fix in ThreadSafe.swift's `read`.)
-//   nested read  inside write  both           -> DEADLOCK / libdispatch trap
-//   nested write inside write  both           -> DEADLOCK / libdispatch trap
+//   nested read  inside write  .lock          -> aborts immediately (same os_unfair_lock
+//                                                self-detection as above)
+//   nested read  inside write  .dispatchQueue -> aborts immediately via libdispatch
+//                                                ("dispatch_sync called on queue already
+//                                                owned by current thread")
+//   nested write inside write  both           -> aborts immediately, same two mechanisms
+//                                                as the row above
 //
-// The remaining three rows are inherent to lock/queue mutual exclusion, not
-// bugs — `mutate`/`write` intentionally hold the lock/barrier across the whole
-// closure, so calling back into the same instance from inside one is always
-// unsafe. They can't be asserted in-process (they deadlock or trap the whole
-// runner), so only the fixed case is a live test; the rest stay documented.
+// None of the still-fatal rows hang — both backing mechanisms detect same-thread
+// reentrancy and abort the process right away. This is inherent to lock/queue mutual
+// exclusion, not a bug: `mutate`/`write` intentionally hold the lock/barrier across the
+// whole closure, so calling back into the same instance from inside one is always unsafe.
+// Swift Testing's exit tests let these be real, passing regression tests instead of
+// permanently-disabled documentation — each just confirms the process terminates
+// abnormally (and quickly, well under the time limit) rather than hanging forever.
 
 @Test
 func reentrantReadInsideReadIsSafeOnDispatchQueue() {
@@ -277,14 +287,57 @@ func reentrantReadInsideReadIsSafeOnDispatchQueue() {
     array.forEach { _ in _ = array.count }
 }
 
-@Test(.disabled("Deadlocks (.lock) / libdispatch-traps (.dispatchQueue). Inherent to sync mutual exclusion; needs documenting, not fixing."))
-func reentrantReadInsideMutateIsUnsafe() {
-    let array = ThreadSafe([1, 2, 3], mechanism: .lock)
-    array.mutate { elements in
-        elements.append(4)
-        _ = array.count
+#if os(macOS)
+@Test(.timeLimit(.minutes(1)))
+func reentrantReadInsideReadAbortsOnLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .lock)
+        array.forEach { _ in _ = array.count }
     }
 }
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantReadInsideMutateAbortsOnLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .lock)
+        array.mutate { elements in
+            elements.append(4)
+            _ = array.count
+        }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideWriteAbortsOnLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .lock)
+        array.mutate { _ in
+            array.mutate { $0.append(5) }
+        }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantReadInsideMutateAbortsOnDispatchQueue() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
+        array.mutate { elements in
+            elements.append(4)
+            _ = array.count
+        }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideWriteAbortsOnDispatchQueue() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
+        array.mutate { _ in
+            array.mutate { $0.append(5) }
+        }
+    }
+}
+#endif
 
 // MARK: - `.lock` mechanism must not retain a duplicate of the initial value
 
