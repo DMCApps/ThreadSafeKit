@@ -272,6 +272,20 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 //                                                owned by current thread")
 //   nested write inside write  both           -> aborts immediately, same two mechanisms
 //                                                as the row above
+//   nested write inside read   .lock          -> aborts immediately (same os_unfair_lock
+//                                                self-detection as above)
+//   nested write inside read   .dispatchQueue -> USED TO HANG FOREVER: the outer `read`
+//                                                runs a non-barrier `sync`, which never
+//                                                claims libdispatch's drain-owner slot, so
+//                                                the nested `write`'s barrier `sync` just
+//                                                waits forever for that non-existent owner's
+//                                                (i.e. its own thread's) work to drain — no
+//                                                trap ever fires. `write` now checks a
+//                                                per-instance `DispatchSpecificKey` before
+//                                                taking the barrier and traps explicitly
+//                                                instead (see `reentrancyKey` in
+//                                                ThreadSafe.swift). This is the one row that
+//                                                needed an explicit fix, not just a test.
 //
 // None of the still-fatal rows hang — both backing mechanisms detect same-thread
 // reentrancy and abort the process right away. This is inherent to lock/queue mutual
@@ -335,6 +349,25 @@ func reentrantWriteInsideWriteAbortsOnDispatchQueue() async {
         array.mutate { _ in
             array.mutate { $0.append(5) }
         }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideReadAbortsOnLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .lock)
+        array.forEach { _ in array.append(4) }
+    }
+}
+
+// Regression test for the one reentrancy row that used to hang forever instead of
+// aborting (see the table above and `reentrancyKey` in ThreadSafe.swift). Before the fix,
+// this test would time out rather than fail cleanly.
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideReadAbortsOnDispatchQueue() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
+        array.forEach { _ in array.append(4) }
     }
 }
 #endif

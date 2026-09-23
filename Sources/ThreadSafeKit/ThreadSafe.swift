@@ -19,6 +19,15 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         case queue(DispatchQueue)
     }
 
+    // Per-instance (not static/shared — a shared key would false-positive when nesting into a
+    // *different* instance's queue) key that lets `write` detect it's running on this instance's
+    // own queue already (e.g. called from a closure passed to `read`) and trap instead of
+    // deadlocking: a barrier `sync` nested inside a non-barrier `sync` on the same concurrent
+    // queue never triggers libdispatch's own "already owned by current thread" abort, because the
+    // outer non-barrier `sync` never claims the drain-owner slot the detector keys off of — it
+    // just waits forever for the outer call (its own thread) to finish. See `write` below.
+    private let reentrancyKey = DispatchSpecificKey<Void>()
+
     private let backing: Backing
     // Only used by the `.queue` mechanism — nil under `.lock`, since the lock holds the state itself
     // and only ever touches this through `read`/`write`. Keeping it nil (rather than a duplicate copy
@@ -31,7 +40,9 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
             backing = .lock(OSAllocatedUnfairLock(initialState: wrappedValue))
             storage = nil
         case .dispatchQueue:
-            backing = .queue(DispatchQueue(label: "com.threadsafekit.\(Value.self)", attributes: .concurrent))
+            let queue = DispatchQueue(label: "com.threadsafekit.\(Value.self)", attributes: .concurrent)
+            queue.setSpecific(key: reentrancyKey, value: ())
+            backing = .queue(queue)
             storage = wrappedValue
         }
     }
@@ -55,6 +66,12 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         switch backing {
         case .lock(let lock): return try lock.withLock(body)
         case .queue(let queue):
+            // A barrier `sync` nested inside this instance's own non-barrier `read` would hang
+            // (see `reentrancyKey`'s doc comment) instead of tripping libdispatch's native
+            // same-thread-reentrancy abort, so detect and trap it explicitly here.
+            if DispatchQueue.getSpecific(key: reentrancyKey) != nil {
+                fatalError("ThreadSafe: reentrant write into an instance already being read/written on the same thread")
+            }
             return try queue.sync(flags: .barrier) {
                 var value = storage!
                 defer { storage = value }
