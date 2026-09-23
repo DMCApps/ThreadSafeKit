@@ -180,7 +180,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
 }
 
 @Test(arguments: mechanisms) func threadSafeArrayDescriptionContainsElements(mechanism: ThreadSafeMechanism) throws {
-    #expect(ThreadSafeArray([1, 2, 3], mechanism: mechanism).description == "ThreadSafeArray([1, 2, 3])")
+    #expect(ThreadSafeArray([1, 2, 3], mechanism: mechanism).description == "ThreadSafe([1, 2, 3])")
 }
 
 @Test(arguments: mechanisms) func threadSafeArrayPropertyWrapperReadsSnapshotAndProjectsInstance(mechanism: ThreadSafeMechanism) throws {

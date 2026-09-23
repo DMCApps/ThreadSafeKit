@@ -79,5 +79,5 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
 }
 
 @Test(arguments: mechanisms) func threadSafeAtomicDescriptionContainsWrappedValue(mechanism: ThreadSafeMechanism) throws {
-    #expect(ThreadSafeAtomic(wrappedValue: 42, mechanism: mechanism).description == "ThreadSafeAtomic(42)")
+    #expect(ThreadSafeAtomic(wrappedValue: 42, mechanism: mechanism).description == "ThreadSafe(42)")
 }

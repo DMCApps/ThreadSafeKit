@@ -175,7 +175,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryDescriptionContainsDictionary(mechanism: ThreadSafeMechanism) throws {
-    #expect(ThreadSafeDictionary(["a": 1], mechanism: mechanism).description == "ThreadSafeDictionary([\"a\": 1])")
+    #expect(ThreadSafeDictionary(["a": 1], mechanism: mechanism).description == "ThreadSafe([\"a\": 1])")
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryPropertyWrapperReadsSnapshotAndProjectsInstance(mechanism: ThreadSafeMechanism) throws {
