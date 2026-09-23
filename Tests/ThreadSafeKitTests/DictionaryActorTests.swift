@@ -45,7 +45,7 @@ import Testing
 
 @Test func dictionaryActorForEach() async throws {
     let dictionary = DictionaryActor(["a": 1, "b": 2])
-    let sum = Atomic(wrappedValue: 0)
+    let sum = ThreadSafeAtomic(wrappedValue: 0)
     await dictionary.forEach { entry in sum.mutate { $0 += entry.value } }
     #expect(sum.wrappedValue == 3)
 }
