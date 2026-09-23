@@ -74,6 +74,11 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
             }
             return try queue.sync(flags: .barrier) {
                 var value = storage!
+                // Drop `storage`'s reference before mutating so `value` is uniquely referenced —
+                // otherwise every mutation sees a refcount of 2 and CoW forces a full copy of the
+                // whole collection on every write. Safe to nil out: the barrier guarantees no
+                // concurrent `read` can be mid-execution to observe the gap.
+                storage = nil
                 defer { storage = value }
                 return try body(&value)
             }
