@@ -5,24 +5,24 @@ import os
 /// defaults to a serial `DispatchQueue`.
 @propertyWrapper
 public final class ThreadSafeAtomic<Value: Sendable>: @unchecked Sendable {
-    private final class Box<T> {
-        var value: T
-        init(_ value: T) { self.value = value }
-    }
-
     private enum Backing {
         case lock(OSAllocatedUnfairLock<Value>)
-        case queue(DispatchQueue, Box<Value>)
+        case queue(DispatchQueue)
     }
 
     private let backing: Backing
+    // Only used by the `.queue` mechanism — the `.lock` mechanism keeps its state inside the
+    // `OSAllocatedUnfairLock` instead, and only ever touches this through `wrappedValue`/`mutate`.
+    private var storage: Value
 
     public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .dispatchQueue) {
         switch mechanism {
         case .lock:
             backing = .lock(OSAllocatedUnfairLock(initialState: wrappedValue))
+            storage = wrappedValue
         case .dispatchQueue:
-            backing = .queue(DispatchQueue(label: "com.threadsafekit.atomic"), Box(wrappedValue))
+            backing = .queue(DispatchQueue(label: "com.threadsafekit.atomic"))
+            storage = wrappedValue
         }
     }
 
@@ -31,8 +31,8 @@ public final class ThreadSafeAtomic<Value: Sendable>: @unchecked Sendable {
             switch backing {
             case .lock(let lock):
                 return lock.withLock { $0 }
-            case .queue(let queue, let box):
-                return queue.sync { box.value }
+            case .queue(let queue):
+                return queue.sync { storage }
             }
         }
         @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
@@ -40,8 +40,8 @@ public final class ThreadSafeAtomic<Value: Sendable>: @unchecked Sendable {
             switch backing {
             case .lock(let lock):
                 lock.withLock { $0 = newValue }
-            case .queue(let queue, let box):
-                queue.sync { box.value = newValue }
+            case .queue(let queue):
+                queue.sync { storage = newValue }
             }
         }
     }
@@ -50,8 +50,8 @@ public final class ThreadSafeAtomic<Value: Sendable>: @unchecked Sendable {
         switch backing {
         case .lock(let lock):
             lock.withLock(mutation)
-        case .queue(let queue, let box):
-            queue.sync { mutation(&box.value) }
+        case .queue(let queue):
+            queue.sync { mutation(&storage) }
         }
     }
 }

@@ -9,24 +9,24 @@ import os
 /// `$name` gives `setValue`/`mutate`/subscript/etc.
 @propertyWrapper
 public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable>: @unchecked Sendable {
-    private final class Box<T> {
-        var value: T
-        init(_ value: T) { self.value = value }
-    }
-
     private enum Backing {
         case lock(OSAllocatedUnfairLock<[Key: Value]>)
-        case queue(DispatchQueue, Box<[Key: Value]>)
+        case queue(DispatchQueue)
     }
 
     private let backing: Backing
+    // Only used by the `.queue` mechanism — the `.lock` mechanism keeps its state inside the
+    // `OSAllocatedUnfairLock` instead, and only ever touches this through `read`/`write`.
+    private var storage: [Key: Value]
 
     public init(_ dictionary: [Key: Value] = [:], mechanism: ThreadSafeMechanism = .dispatchQueue) {
         switch mechanism {
         case .lock:
             backing = .lock(OSAllocatedUnfairLock(initialState: dictionary))
+            storage = [:]
         case .dispatchQueue:
-            backing = .queue(DispatchQueue(label: "com.threadsafekit.dictionary", attributes: .concurrent), Box(dictionary))
+            backing = .queue(DispatchQueue(label: "com.threadsafekit.dictionary", attributes: .concurrent))
+            storage = dictionary
         }
     }
 
@@ -38,8 +38,8 @@ public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
         switch backing {
         case .lock(let lock):
             return try lock.withLock(body)
-        case .queue(let queue, let box):
-            return try queue.sync { try body(&box.value) }
+        case .queue(let queue):
+            return try queue.sync { try body(&storage) }
         }
     }
 
@@ -47,8 +47,8 @@ public final class ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
         switch backing {
         case .lock(let lock):
             return try lock.withLock(body)
-        case .queue(let queue, let box):
-            return try queue.sync(flags: .barrier) { try body(&box.value) }
+        case .queue(let queue):
+            return try queue.sync(flags: .barrier) { try body(&storage) }
         }
     }
 
