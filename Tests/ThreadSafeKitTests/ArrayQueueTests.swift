@@ -155,3 +155,19 @@ import Testing
     let decoded = try JSONDecoder().decode(Container.self, from: data)
     #expect(decoded.items.elements == ["x", "y"])
 }
+
+@Test func arrayQueueEquatableComparesElements() throws {
+    #expect(ArrayQueue([1, 2, 3]) == ArrayQueue([1, 2, 3]))
+    #expect(ArrayQueue([1, 2, 3]) != ArrayQueue([1, 2]))
+    #expect(ArrayQueue([1, 2, 3]) != ArrayQueue([3, 2, 1]))
+}
+
+// Auto-synthesized Equatable on a containing type only compiles because
+// ArrayQueue<Int> conforms to Equatable; this is the whole point of the feature.
+@Test func arrayQueueEquatableInsideContainingType() throws {
+    struct Container: Equatable {
+        let items: ArrayQueue<Int>
+    }
+    #expect(Container(items: ArrayQueue([1, 2])) == Container(items: ArrayQueue([1, 2])))
+    #expect(Container(items: ArrayQueue([1, 2])) != Container(items: ArrayQueue([1, 3])))
+}

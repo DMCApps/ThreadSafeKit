@@ -77,6 +77,12 @@ public final class ArrayLock<Element: Sendable>: Sendable {
     }
 }
 
+extension ArrayLock: Equatable where Element: Equatable {
+    public static func == (lhs: ArrayLock, rhs: ArrayLock) -> Bool {
+        lhs.elements == rhs.elements
+    }
+}
+
 extension ArrayLock: Codable where Element: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

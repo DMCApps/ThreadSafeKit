@@ -19,6 +19,12 @@ public final class Atomic<Value: Sendable>: Sendable {
     }
 }
 
+extension Atomic: Equatable where Value: Equatable {
+    public static func == (lhs: Atomic, rhs: Atomic) -> Bool {
+        lhs.wrappedValue == rhs.wrappedValue
+    }
+}
+
 extension Atomic: Codable where Value: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

@@ -53,3 +53,18 @@ import Testing
     let decoded = try JSONDecoder().decode(Container.self, from: data)
     #expect(decoded.counter.wrappedValue == 7)
 }
+
+@Test func atomicQueueEquatableComparesWrappedValue() throws {
+    #expect(AtomicQueue(wrappedValue: 1) == AtomicQueue(wrappedValue: 1))
+    #expect(AtomicQueue(wrappedValue: 1) != AtomicQueue(wrappedValue: 2))
+}
+
+// Auto-synthesized Equatable on a containing type only compiles because
+// AtomicQueue<Int> conforms to Equatable; this is the whole point of the feature.
+@Test func atomicQueueEquatableInsideContainingType() throws {
+    struct Container: Equatable {
+        let counter: AtomicQueue<Int>
+    }
+    #expect(Container(counter: AtomicQueue(wrappedValue: 1)) == Container(counter: AtomicQueue(wrappedValue: 1)))
+    #expect(Container(counter: AtomicQueue(wrappedValue: 1)) != Container(counter: AtomicQueue(wrappedValue: 2)))
+}

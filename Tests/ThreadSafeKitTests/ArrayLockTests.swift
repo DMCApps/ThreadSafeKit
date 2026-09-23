@@ -155,3 +155,19 @@ import Testing
     let decoded = try JSONDecoder().decode(Container.self, from: data)
     #expect(decoded.items.elements == ["x", "y"])
 }
+
+@Test func arrayLockEquatableComparesElements() throws {
+    #expect(ArrayLock([1, 2, 3]) == ArrayLock([1, 2, 3]))
+    #expect(ArrayLock([1, 2, 3]) != ArrayLock([1, 2]))
+    #expect(ArrayLock([1, 2, 3]) != ArrayLock([3, 2, 1]))
+}
+
+// Auto-synthesized Equatable on a containing type only compiles because
+// ArrayLock<Int> conforms to Equatable; this is the whole point of the feature.
+@Test func arrayLockEquatableInsideContainingType() throws {
+    struct Container: Equatable {
+        let items: ArrayLock<Int>
+    }
+    #expect(Container(items: ArrayLock([1, 2])) == Container(items: ArrayLock([1, 2])))
+    #expect(Container(items: ArrayLock([1, 2])) != Container(items: ArrayLock([1, 3])))
+}

@@ -74,6 +74,12 @@ public final class DictionaryQueue<Key: Hashable & Sendable, Value: Sendable>: @
     }
 }
 
+extension DictionaryQueue: Equatable where Value: Equatable {
+    public static func == (lhs: DictionaryQueue, rhs: DictionaryQueue) -> Bool {
+        lhs.dictionary == rhs.dictionary
+    }
+}
+
 extension DictionaryQueue: Codable where Key: Codable, Value: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

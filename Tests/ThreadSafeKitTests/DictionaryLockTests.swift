@@ -148,3 +148,19 @@ import Testing
     let decoded = try JSONDecoder().decode(Container.self, from: data)
     #expect(decoded.values.dictionary == ["a": 1])
 }
+
+@Test func dictionaryLockEquatableComparesDictionary() throws {
+    #expect(DictionaryLock(["a": 1]) == DictionaryLock(["a": 1]))
+    #expect(DictionaryLock(["a": 1]) != DictionaryLock(["a": 2]))
+    #expect(DictionaryLock(["a": 1]) != DictionaryLock(["a": 1, "b": 2]))
+}
+
+// Auto-synthesized Equatable on a containing type only compiles because
+// DictionaryLock<String, Int> conforms to Equatable; this is the whole point of the feature.
+@Test func dictionaryLockEquatableInsideContainingType() throws {
+    struct Container: Equatable {
+        let values: DictionaryLock<String, Int>
+    }
+    #expect(Container(values: DictionaryLock(["a": 1])) == Container(values: DictionaryLock(["a": 1])))
+    #expect(Container(values: DictionaryLock(["a": 1])) != Container(values: DictionaryLock(["a": 2])))
+}

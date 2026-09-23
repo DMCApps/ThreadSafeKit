@@ -21,6 +21,12 @@ public final class AtomicQueue<Value: Sendable>: @unchecked Sendable {
     }
 }
 
+extension AtomicQueue: Equatable where Value: Equatable {
+    public static func == (lhs: AtomicQueue, rhs: AtomicQueue) -> Bool {
+        lhs.wrappedValue == rhs.wrappedValue
+    }
+}
+
 extension AtomicQueue: Codable where Value: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()

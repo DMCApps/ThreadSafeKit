@@ -89,6 +89,12 @@ public final class ArrayQueue<Element: Sendable>: @unchecked Sendable {
     }
 }
 
+extension ArrayQueue: Equatable where Element: Equatable {
+    public static func == (lhs: ArrayQueue, rhs: ArrayQueue) -> Bool {
+        lhs.elements == rhs.elements
+    }
+}
+
 extension ArrayQueue: Codable where Element: Codable {
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
