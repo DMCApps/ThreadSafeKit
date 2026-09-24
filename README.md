@@ -114,20 +114,32 @@ let nextID = await idGenerator.mutate { value in
 
 **What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
-### Codable and Equatable
+### Codable
 
-`ThreadSafe<Value>` conforms conditionally — only when `Value` does — regardless of `mechanism`:
+Encode and decode the plain value, and wrap it yourself. This works the same way for `ThreadSafe` and the actor types, and lets you pick the mechanism:
 
 ```swift
-let counter = ThreadSafe(wrappedValue: 42)
-let data = try JSONEncoder().encode(counter)
-let decoded = try JSONDecoder().decode(ThreadSafe<Int>.self, from: data)
+// ThreadSafe
+let items = ThreadSafe(try JSONDecoder().decode([Int].self, from: data), mechanism: .lock)
+let itemsData = try JSONEncoder().encode(items.elements)
 
+// Actor
+let list = ThreadSafeArray(try JSONDecoder().decode([Int].self, from: data))
+let listData = try JSONEncoder().encode(await list.elements)
+```
+
+In a `Codable` model, store the plain value and wrap it where it's shared.
+
+### Equatable
+
+`ThreadSafe<Value>` is `Equatable` when `Value` is, regardless of `mechanism`:
+
+```swift
 let cache = ThreadSafe(["a": 1])
 cache == ThreadSafe(["a": 1])   // true
 
-struct Container: Codable, Equatable {
-    let items: ThreadSafe<[Int]>   // synthesis works because ThreadSafe<[Int]> is itself Codable/Equatable
+struct Container: Equatable {
+    let items: ThreadSafe<[Int]>   // synthesis works because ThreadSafe<[Int]> is itself Equatable
 }
 ```
 
@@ -136,15 +148,10 @@ Not `Hashable` — see above: a member's hash must never change while it's in a 
 `Hashable` to its own conformance list either, for the same reason (its `items` field is still a
 mutable reference under the hood, `let` only stops reassignment, not mutation through it).
 
-Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
+Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`) aren't `Equatable` — `==` is synchronous, but reading actor-isolated state needs `await`. Compare the plain snapshots instead:
 
 ```swift
-let snapshot = await list.elements
-let data = try JSONEncoder().encode(snapshot)
-// ...
-let restored = ThreadSafeArray(try JSONDecoder().decode([Int].self, from: data))
-
-await list.elements == (await otherList.elements)   // compare the plain snapshots
+await list.elements == (await otherList.elements)
 ```
 
 This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `ThreadSafeArray<Element>`/`ThreadSafeDictionary<Key, Value>`/`ThreadSafeSet<Element>`/`ThreadSafeAtomic<Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
@@ -207,7 +214,7 @@ Alongside `ThreadSafe<Value>`, four real actors cover the async case — `Thread
 
 **Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
 
-When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a default-mechanism (`.readerWriterLock`) instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
+When `Value` is `Equatable`, so is `ThreadSafe<Value>`. Actor types aren't — `==` is synchronous but reading actor-isolated state needs `await`, so compare the plain value at the call site instead. For encoding and decoding, see [Codable](#codable).
 
 `ThreadSafe<Value>` is deliberately **not** `Hashable`, even when `Value` is: hashing/equality-for-Set-membership requires a member's hash to never change while it's a member (`Set` never re-buckets an existing element), which a reference type with mutable contents can't promise — mutating a `ThreadSafe` after inserting it into a `Set` or using it as a `Dictionary` key corrupts the table. Deduplicate/hash by content instead: `Set(instances.map(\.wrappedValue))`.
 

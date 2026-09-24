@@ -383,25 +383,6 @@ private extension Int {
     #expect(array.elements.sorted() == Array(0..<concurrencyIterations))
 }
 
-@Test(arguments: mechanisms) func threadSafeArrayCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
-    let array = ThreadSafe(["a", "b", "c"], mechanism: mechanism)
-    let data = try JSONEncoder().encode(array)
-    let decoded = try JSONDecoder().decode(ThreadSafe<[String]>.self, from: data)
-    #expect(decoded.elements == ["a", "b", "c"])
-}
-
-// Auto-synthesized Codable on a containing type only compiles because
-// ThreadSafe<[String]> conforms to Codable; this is the whole point of the feature.
-@Test func threadSafeArrayCodableRoundTripInsideContainingType() throws {
-    struct Container: Codable {
-        let items: ThreadSafe<[String]>
-    }
-    let container = Container(items: ThreadSafe(["x", "y"]))
-    let data = try JSONEncoder().encode(container)
-    let decoded = try JSONDecoder().decode(Container.self, from: data)
-    #expect(decoded.items.elements == ["x", "y"])
-}
-
 @Test func threadSafeArrayEquatableComparesElements() throws {
     #expect(ThreadSafe([1, 2, 3]) == ThreadSafe([1, 2, 3]))
     #expect(ThreadSafe([1, 2, 3]) != ThreadSafe([1, 2]))

@@ -21,17 +21,3 @@ extension ThreadSafe: Equatable where Value: Equatable {
 // content can stay stable for a member's whole lifetime. Equatable above has no such invariant to
 // violate (== is just an ad hoc snapshot comparison, nothing stores the result), so it's safe to
 // keep. To deduplicate/hash by content, snapshot first: `Set(instances.map(\.wrappedValue))`.
-
-extension ThreadSafe: Codable where Value: Codable {
-    @inlinable
-    public convenience init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        self.init(wrappedValue: try container.decode(Value.self))
-    }
-
-    @inlinable
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(wrappedValue)
-    }
-}
