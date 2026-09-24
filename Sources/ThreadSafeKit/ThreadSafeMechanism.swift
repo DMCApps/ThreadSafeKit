@@ -3,26 +3,39 @@
 /// actor isolation always requires `await`, so there's no sync/mechanism choice to make.
 ///
 /// Per-call costs from `ThreadSafeKitBenchmarks` (Apple M4 Max, release build; real numbers vary
-/// by machine and load, so treat these as a comparison between mechanisms, not a contract). The
-/// contended rows are 8 threads sharing one instance. Full results: `Benchmarks/RESULTS.md`.
+/// by machine and load, so treat these as a comparison between mechanisms, not a contract).
+/// Contended rows are 8 threads sharing one instance. Full results: `Benchmarks/RESULTS.md`.
 ///
-/// | Mechanism | `count` | `a[i] += 1` | `append` + `popLast` | Contended 100% read | Contended 100% write |
-/// |---|---|---|---|---|---|
-/// | `.lock` | ~4ns | ~12ns | ~19ns | ~45ns | ~74ns |
-/// | `.readerWriterLock` | ~20ns | ~27ns | ~52ns | ~340ns | ~2260ns |
+/// | Workload | `.lock` | `.readerWriterLock` |
+/// |---|---|---|
+/// | `count` | ~5ns | ~20ns |
+/// | `a[i] += 1` | ~12ns | ~27ns |
+/// | Contended short reads (`a[i]`) | ~47ns | ~340ns |
+/// | Contended short reads, 10% writes | ~49ns | ~1,320ns |
+/// | Contended scan (`count(where:)`), 64 elements | ~146ns | ~378ns |
+/// | Contended scan, 256 elements | ~381ns | ~367ns |
+/// | Contended scan, 1k elements | ~1,100ns | ~308ns |
+/// | Contended scan, 10k elements | ~9,236ns | ~1,043ns |
+/// | Contended 10k scan, 50% writes | ~7,322ns | ~3,728ns |
 ///
-/// `.lock` is cheaper in every measured row, including contended reads. It skips
-/// ``ReentrancyTracker`` entirely, because `os_unfair_lock` already traps on a same-thread relock.
-/// `.readerWriterLock` needs the tracker (`pthread_rwlock` would hang on some reentrant
-/// combinations instead of trapping), which adds per-call cost. The benchmark's critical sections
-/// are short; reads that hold the lock for a long time (e.g. `filter` over a large collection)
-/// aren't measured.
+/// Use `.lock` (the default) unless many threads read the same instance at once and each read
+/// walks a large part of it (`filter`, `map`, `sorted`, `contains(where:)`, ... over roughly 1,000+
+/// elements). Only then do parallel readers pay for `.readerWriterLock`'s higher per-call cost: it
+/// breaks even around 256 elements and is several times faster from 1,000 up, even with half the
+/// operations being writes. For short operations it's 1.5–30× slower, because it pays for
+/// ``ReentrancyTracker`` (`pthread_rwlock` would hang on some reentrant combinations instead of
+/// trapping) and for reader bookkeeping.
+///
+/// `os_unfair_lock` records its owner so the system can attempt to resolve priority inversions
+/// (`os/lock.h`); `pthread_rwlock` offers no priority-inheritance option.
 public enum ThreadSafeMechanism: Sendable {
-    /// `pthread_rwlock_t`, locked manually: concurrent reads, exclusive writes. **Default.**
-    /// Same-thread reentry traps with this package's own message, via ``ReentrancyTracker``.
+    /// `pthread_rwlock_t`, locked manually: concurrent reads, exclusive writes. For many threads
+    /// reading a large collection at once (see the table above). Same-thread reentry traps with
+    /// this package's own message, via ``ReentrancyTracker``.
     case readerWriterLock
-    /// `OSAllocatedUnfairLock`. Every access, reads included, is exclusive. Cheaper than
-    /// `.readerWriterLock` in every measured row (see the table above). The trade-off: same-thread
+    /// `OSAllocatedUnfairLock`. **Default.** Every access, reads included, is exclusive. Faster than
+    /// `.readerWriterLock` for everything except concurrent reads over large collections (see the
+    /// table above). The trade-off: same-thread
     /// reentry crashes with `os_unfair_lock`'s own message ("BUG IN CLIENT OF LIBPLATFORM: Trying to
     /// recursively lock an os_unfair_lock", in the crash report) rather than this package's own.
     case lock

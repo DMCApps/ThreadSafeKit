@@ -29,7 +29,7 @@ extension Dictionary: _ThreadSafeKeyedStorage {
 extension ThreadSafe
 where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sendable, Value.Keys: Sendable, Value.Values: Sendable {
     @inlinable
-    public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
+    public convenience init(mechanism: ThreadSafeMechanism = .lock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 

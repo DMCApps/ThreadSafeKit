@@ -24,7 +24,7 @@ _counter.mutate { $0 += 1 }
 @ThreadSafe var items = [1, 2, 3]
 $items.append(4)   // items == [1, 2, 3, 4]
 
-@ThreadSafe(mechanism: .lock) var cache = ["key": 1]
+@ThreadSafe(mechanism: .readerWriterLock) var cache = ["key": 1]
 $cache["other"] = 2   // cache == ["key": 1, "other": 2]
 
 let list = ThreadSafeArray<Int>()
@@ -120,7 +120,7 @@ The types don't conform to `Codable`. The actor types can't (encoding is synchro
 
 ```swift
 // ThreadSafe
-let items = ThreadSafe(try JSONDecoder().decode([Int].self, from: data), mechanism: .lock)
+let items = ThreadSafe(try JSONDecoder().decode([Int].self, from: data), mechanism: .readerWriterLock)
 let itemsData = try JSONEncoder().encode(items.elements)
 
 // Actor
@@ -159,9 +159,19 @@ This also rules out `@MainActor`-style isolated conformances: that mechanism tie
 
 Shape-specific members mirror the standard library's own `Array`/`Dictionary`/`Set` names, so the API can be guessed from stdlib familiarity; the wrapper-only members are `mutate`, `wrappedValue`/`$name`, the snapshot accessors (`elements`/`dictionary`), `subscript(safe:)`, `ThreadSafeAtomic`'s `get()`/`set(_:)`, and the actor-only `ThreadSafeArray.setElement(_:at:)`.
 
-One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.lock`): `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included) or `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes). See [Which to use](#which-to-use). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
 
 Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see [Subscripts are atomic](#subscripts-are-atomic).
+
+### Which to use
+
+| Choose | When | Why |
+|---|---|---|
+| `ThreadSafe<Value>`, `.lock` (default) | Most shared state: counters, caches, and collections read and written with short operations (`append`, subscripts, `contains`, `updateValue`, …). | Fastest for every short operation, contended or not: ~5 ns for `count` and ~47 ns for 8-way contended reads, against ~20 ns and ~340 ns for `.readerWriterLock`. |
+| `ThreadSafe<Value>`, `.readerWriterLock` | Many threads reading the same large collection at once, with scans like `filter`, `map`, `sorted` or `contains(where:)` over roughly 1,000+ elements. | Readers run in parallel: 3.6× faster than `.lock` at 1k elements and 8.9× at 10k, still 2× with half the operations writes. It breaks even around 256 elements and is 1.5–30× slower for short operations. |
+| Actor types | The caller is already `async`, and you'd rather suspend than block a thread. | No thread blocks while waiting. Each call pays an actor hop (~35 ns for `count`), and closure-based scans are much slower than `ThreadSafe` in the current benchmarks. |
+
+Measured on one machine; see [Benchmarks](#benchmarks) for every row.
 
 ### Why not `DispatchQueue`?
 
@@ -210,7 +220,7 @@ Alongside `ThreadSafe<Value>`, four real actors cover the async case — `Thread
 | Dictionary | `ThreadSafe<[Key: Value]>` (also usable as a property wrapper) | `ThreadSafeDictionary<Key, Value>` |
 | Set | `ThreadSafe<Set<Element>>` (also usable as a property wrapper) | `ThreadSafeSet<Element>` |
 
-**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`, and callers suspend instead of blocking a thread. Safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
+**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`, and callers suspend instead of blocking a thread. Safe under strict concurrency by construction. See [Which to use](#which-to-use). There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
 
 When `Value` is `Equatable`, so is `ThreadSafe<Value>`. Actor types aren't — `==` is synchronous but reading actor-isolated state needs `await`, so compare the plain value at the call site instead. For encoding and decoding, see [Codable](#codable).
 
@@ -231,29 +241,33 @@ Per-operation cost of each type and mechanism against the raw stdlib type. The t
 
 | Operation                                |  Raw |     actor |    .lock | .readerWriterLock | Spread |
 | ---------------------------------------- | ---: | --------: | -------: | ----------------: | -----: |
-| Array count                              |  5.3 |      34.3 |      4.5 |              20.8 |    ±7% |
-| Array a[i] get                           |  5.2 |      35.0 |      4.5 |              21.0 |    ±9% |
-| Array a[i] = v                           |  2.0 |      57.2 |     30.5 |              46.8 |    ±3% |
-| Array a[i] += 1                          |  2.0 |      30.7 |     11.7 |              27.7 |    ±4% |
-| Array append + popLast                   |  2.5 |     124.1 |     19.5 |              50.6 |    ±4% |
-| Array elements snapshot                  |  5.1 |      31.0 |      7.8 |              24.0 |    ±6% |
-| Array contains(where:)                   | 21.6 |   2,604.3 |     24.0 |              40.2 |    ±5% |
-| Dictionary d[k] get                      |  9.6 |      40.5 |      8.1 |              24.5 |    ±5% |
-| Dictionary d[k] = v                      |  7.1 |      73.7 |     18.2 |              34.3 |    ±3% |
-| Dictionary d[k]! += 1                    |  6.2 |      33.5 |     16.8 |              32.5 |    ±4% |
-| Dictionary d[k, default: 0] += 1         |  9.2 |      33.8 |     17.2 |              32.5 |    ±4% |
-| Dictionary updateValue                   |  7.3 |      74.0 |     13.7 |              30.0 |    ±4% |
-| Set contains                             |  8.5 |      37.4 |      7.2 |              23.1 |    ±4% |
-| Set insert + remove                      | 27.9 |     162.7 |     27.2 |              60.9 |    ±6% |
-| Scalar read                              |  1.8 |      27.1 |      4.2 |              20.1 |    ±6% |
-| Scalar mutate { += 1 }                   |  1.2 |      28.8 |      4.0 |              19.6 |    ±6% |
-| Contended 90% read / 10% write           |    - |     253.6 |     46.5 |           1,447.9 |    ±6% |
-| Contended 100% read                      |    - |     269.7 |     43.7 |             328.2 |    ±4% |
-| Contended 100% write (a[i] += 1)         |    - |     271.7 |     77.5 |           2,315.9 |    ±6% |
-| Contended long read (count(where:), 10k) |    - | 419,092.8 |  8,974.5 |           1,048.7 |    ±5% |
-| Contended long read + 10% write          |    - | 380,110.9 | 12,344.5 |           2,846.0 |   ±10% |
+| Array count                              |  5.3 |      35.6 |      4.5 |              19.9 |    ±8% |
+| Array a[i] get                           |  5.0 |      34.8 |      4.5 |              20.2 |    ±8% |
+| Array a[i] = v                           |  2.0 |      56.1 |     30.9 |              46.9 |    ±5% |
+| Array a[i] += 1                          |  2.0 |      30.2 |     11.6 |              27.3 |    ±4% |
+| Array append + popLast                   |  2.5 |     124.6 |     19.1 |              50.2 |    ±5% |
+| Array elements snapshot                  |  4.9 |      31.2 |      7.6 |              23.6 |    ±8% |
+| Array contains(where:)                   | 21.1 |   2,588.5 |     23.5 |              39.1 |    ±5% |
+| Dictionary d[k] get                      |  9.7 |      41.5 |      8.2 |              24.1 |    ±3% |
+| Dictionary d[k] = v                      |  6.7 |      74.9 |     18.2 |              33.6 |    ±4% |
+| Dictionary d[k]! += 1                    |  6.1 |      33.1 |     16.6 |              32.4 |    ±3% |
+| Dictionary d[k, default: 0] += 1         |  9.1 |      34.0 |     16.8 |              32.4 |    ±4% |
+| Dictionary updateValue                   |  7.2 |      75.5 |     13.7 |              29.3 |    ±4% |
+| Set contains                             |  8.6 |      37.3 |      7.0 |              22.9 |    ±4% |
+| Set insert + remove                      | 18.1 |     197.1 |     26.6 |              70.3 |   ±11% |
+| Scalar read                              |  1.7 |      27.5 |      4.4 |              19.4 |    ±5% |
+| Scalar mutate { += 1 }                   |  1.2 |      28.4 |      4.0 |              19.5 |    ±8% |
+| Contended 90% read / 10% write           |    - |     257.7 |     48.9 |           1,320.6 |    ±7% |
+| Contended 100% read                      |    - |     276.7 |     47.0 |             339.1 |    ±4% |
+| Contended 100% write (a[i] += 1)         |    - |     277.8 |     79.0 |           2,282.7 |    ±5% |
+| Contended long read (count(where:), 64)  |    - |   3,826.6 |    146.0 |             378.4 |    ±4% |
+| Contended long read (count(where:), 256) |    - |  13,475.7 |    381.3 |             366.7 |   ±14% |
+| Contended long read (count(where:), 1k)  |    - |  46,936.5 |  1,099.6 |             307.5 |    ±4% |
+| Contended long read (count(where:), 10k) |    - | 421,959.3 |  9,235.9 |           1,043.0 |    ±5% |
+| Contended long read + 10% write          |    - | 378,231.3 | 13,252.2 |           2,780.1 |   ±12% |
+| Contended long read + 50% write          |    - | 210,345.1 |  7,322.0 |           3,728.0 |    ±7% |
 
-Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are 8 concurrent workers on one instance (no Raw figure: that would be a data race). Measured on Apple M4 Max (Mac16,6), macOS Version 26.6.2 (Build 25G83), 2026-09-24T23:16:55Z. Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
+Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are 8 concurrent workers on one instance (no Raw figure: that would be a data race). Measured on Apple M4 Max (Mac16,6), macOS Version 26.6.2 (Build 25G83), 2026-09-24T23:29:02Z. Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
 <!-- BENCHMARKS:END -->
 
 ## Testing

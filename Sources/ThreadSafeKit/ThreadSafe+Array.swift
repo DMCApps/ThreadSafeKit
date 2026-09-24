@@ -1,13 +1,13 @@
 extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sendable {
     @inlinable
-    public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
+    public convenience init(mechanism: ThreadSafeMechanism = .lock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 
     @inlinable
     public convenience init(
         _ elements: some Sequence<Value.Element>,
-        mechanism: ThreadSafeMechanism = .readerWriterLock
+        mechanism: ThreadSafeMechanism = .lock
     ) {
         self.init(wrappedValue: Value(elements), mechanism: mechanism)
     }

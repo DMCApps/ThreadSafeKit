@@ -409,37 +409,54 @@ func runBenchmarks() async -> [Row] {
             },
             contended: true)
 
-        // Long critical sections: each read scans 10k elements, so readers hold the lock for
-        // microseconds rather than nanoseconds. This is the case a reader-writer lock is built for.
-        let longReadOps = 1_000
-        let large = Array(0..<10_000)
-        let largeActor = ThreadSafeArray(large)
-        add("Contended long read (count(where:), 10k)",
-            raw: nil,
-            actor: await measureContended(ops: longReadOps) { _ in blackHole(await largeActor.count(where: { $0 & 1 == 0 })) },
-            wrapped: mechanisms.map { m in
-                let a = ThreadSafe(large, mechanism: m)
-                return measureContended(ops: longReadOps) { _ in blackHole(a.count(where: { $0 & 1 == 0 })) }
-            },
-            contended: true)
-        // Same long reads with 1 in 10 operations a write: parallel readers only pay off if
-        // writers don't serialize everything.
-        add("Contended long read + 10% write",
-            raw: nil,
-            actor: await measureContended(ops: longReadOps) { i in
-                if i % 10 == 0 {
-                    await largeActor.mutate { $0[i & 63] += 1 }
-                } else {
-                    blackHole(await largeActor.count(where: { $0 & 1 == 0 }))
-                }
-            },
-            wrapped: mechanisms.map { m in
-                let a = ThreadSafe(large, mechanism: m)
-                return measureContended(ops: longReadOps) { i in
-                    if i % 10 == 0 { a[i & 63] += 1 } else { blackHole(a.count(where: { $0 & 1 == 0 })) }
-                }
-            },
-            contended: true)
+        // Long critical sections: each read scans the whole array, so readers hold the lock far
+        // longer than a subscript does. This is the case a reader-writer lock is built for. The
+        // sizes find where it starts to pay off; each size scans the same total number of
+        // elements per worker (`ops` × size), so every row takes about as long to run.
+        func longReadOps(_ size: Int) -> Int { 10_000_000 / size }
+        func addLongRead(_ label: String, size: Int) async {
+            let values = Array(0..<size)
+            let actor = ThreadSafeArray(values)
+            let ops = longReadOps(size)
+            add("Contended long read (count(where:), \(label))",
+                raw: nil,
+                actor: await measureContended(ops: ops) { _ in blackHole(await actor.count(where: { $0 & 1 == 0 })) },
+                wrapped: mechanisms.map { m in
+                    let a = ThreadSafe(values, mechanism: m)
+                    return measureContended(ops: ops) { _ in blackHole(a.count(where: { $0 & 1 == 0 })) }
+                },
+                contended: true)
+        }
+        await addLongRead("64", size: 64)
+        await addLongRead("256", size: 256)
+        await addLongRead("1k", size: 1_000)
+        await addLongRead("10k", size: 10_000)
+
+        // 10k-element long reads with 1 in `writeEvery` operations a write: parallel readers
+        // only pay off if writers don't serialize everything.
+        func addLongReadWithWrites(_ percent: Int, writeEvery: Int) async {
+            let values = Array(0..<10_000)
+            let actor = ThreadSafeArray(values)
+            let ops = longReadOps(10_000)
+            add("Contended long read + \(percent)% write",
+                raw: nil,
+                actor: await measureContended(ops: ops) { i in
+                    if i % writeEvery == 0 {
+                        await actor.mutate { $0[i & 63] += 1 }
+                    } else {
+                        blackHole(await actor.count(where: { $0 & 1 == 0 }))
+                    }
+                },
+                wrapped: mechanisms.map { m in
+                    let a = ThreadSafe(values, mechanism: m)
+                    return measureContended(ops: ops) { i in
+                        if i % writeEvery == 0 { a[i & 63] += 1 } else { blackHole(a.count(where: { $0 & 1 == 0 })) }
+                    }
+                },
+                contended: true)
+        }
+        await addLongReadWithWrites(10, writeEvery: 10)
+        await addLongReadWithWrites(50, writeEvery: 2)
     }
     return rows
 }
