@@ -32,24 +32,13 @@ let all = await list.elements
 
 `ThreadSafe<Value>` also works as a plain instance (`let list = ThreadSafe<[Int]>()`) when you don't want property-wrapper sugar.
 
-A property wrapper's backing storage is always a `var` (`@ThreadSafe var items` generates a stored `var _items`), and a `Sendable` class can't have any mutable stored property — so `@ThreadSafe` can't be used in a `Sendable` class. Use the plain instance as a `let` instead. `Sendable` structs are fine: a struct may hold a `var` of `Sendable` type (and copies of the struct share the same underlying `ThreadSafe` instance).
+In a `Sendable` class, use the plain-instance form as a `let` — `@ThreadSafe var` won't compile there, because the wrapper's generated storage (`_items`) is a `var`:
 
 ```swift
 final class Store: Sendable {
-    @ThreadSafe var items: [Int] = []   // ❌ error: stored property '_items' of
-                                         //    'Sendable'-conforming class 'Store' is mutable
-}
-
-final class Store: Sendable {
-    let items = ThreadSafe<[Int]>()      // ✅ use the type directly, as a `let`
-}
-
-struct Settings: Sendable {
-    @ThreadSafe var count = 0            // ✅ fine in a struct
+    let items = ThreadSafe<[Int]>()   // not `@ThreadSafe var items: [Int] = []`
 }
 ```
-
-Don't reach for `@unchecked Sendable` to silence the class error — the `let` form above is already correctly `Sendable`.
 
 ### Subscripts are atomic
 
