@@ -47,6 +47,18 @@ if await dict["x"] == nil {
 }
 ```
 
+The same pitfall shows up as check-then-act with `firstIndex`/`remove(at:)` on an array — the index found by `firstIndex` can be stale by the time `remove(at:)` runs, if another writer mutates the array in between:
+
+```swift
+// NOT safe: the array can change between the find and the remove
+if let i = list.firstIndex(of: x) {
+    list.remove(at: i)
+}
+
+// Safe: `removeAll(where:)` does the find and the remove as one atomic step
+list.removeAll(where: { $0 == x })
+```
+
 `mutate(_:)` holds the lock/queue/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
 
 ```swift
@@ -62,6 +74,16 @@ await list.mutate { elements in
 
 let counter = ThreadSafe(wrappedValue: 0)
 counter.mutate { $0 += 1 }   // ThreadSafe already works this way, regardless of mechanism
+```
+
+`mutate` also returns whatever `body` returns, so a compound read-and-update — the most common reason to reach for an atomic — is a single call:
+
+```swift
+let idGenerator = ThreadSafeAtomic(0)
+let nextID = await idGenerator.mutate { value in
+    defer { value += 1 }
+    return value
+}
 ```
 
 **What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
@@ -116,7 +138,7 @@ Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mec
 | Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
 | `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
 | `BidirectionalCollection` | + `first`, `last` |
-| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `removeAll`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `compactMap(_:)`, `sorted(by:)`, `allSatisfy(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
+| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `removeAll`, `removeAll(where:)`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `compactMap(_:)`, `sorted(by:)`, `allSatisfy(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
 | `RangeReplaceableCollection`, `Element: Equatable` | + `contains(_:)` |
 | `RangeReplaceableCollection`, `Element: Comparable` | + `sorted()`, `min()`, `max()` |
 | `RangeReplaceableCollection`* | + `remove(at:)`, `insert(_:at:)`, `insert(contentsOf:at:)`, `removeSubrange(_:)`, `replaceSubrange(_:with:)`, `firstIndex(where:)` |

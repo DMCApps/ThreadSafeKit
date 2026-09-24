@@ -43,6 +43,70 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(array.isEmpty)
 }
 
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereRemovesMatchesKeepsOrder(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4, 5, 6], mechanism: mechanism)
+    array.removeAll(where: { $0 % 2 == 0 })
+    #expect(array.elements == [1, 3, 5])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereNoMatchesLeavesArrayUnchanged(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 3, 5], mechanism: mechanism)
+    array.removeAll(where: { $0 % 2 == 0 })
+    #expect(array.elements == [1, 3, 5])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereAllMatchesEmptiesArray(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([2, 4, 6], mechanism: mechanism)
+    array.removeAll(where: { $0 % 2 == 0 })
+    #expect(array.isEmpty)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereOnEmptyArrayIsNoOp(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe<[Int]>(mechanism: mechanism)
+    array.removeAll(where: { _ in true })
+    #expect(array.isEmpty)
+}
+
+private struct RemoveAllBoom: Error {}
+
+// `Array.removeAll(where:)` is not transactional: observed to partially reorder elements in place
+// before propagating a thrown error, e.g. [1,2,3,4,5,6] throwing on 4 came back as [1,3,2,4,5,6] —
+// same count, same element set, different order. So after the throw here, assert count/set
+// equality but deliberately not exact order.
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereReleasesLockWhenPredicateThrows(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4, 5, 6], mechanism: mechanism)
+    #expect(throws: RemoveAllBoom.self) {
+        try array.removeAll { value in
+            if value == 4 { throw RemoveAllBoom() }
+            return false
+        }
+    }
+    #expect(array.count == 6)
+    #expect(Set(array.elements) == Set([1, 2, 3, 4, 5, 6]))
+    // A follow-up access succeeding (rather than deadlocking) is the actual proof the lock was released.
+    array.append(7)
+    #expect(array.count == 7)
+}
+
+// Real use case: k threads each remove their own residue class while other threads concurrently
+// append values >= N. Every original value must be gone; every appended value must survive.
+@Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereConcurrentWithAppendsIsExact(mechanism: ThreadSafeMechanism) throws {
+    let n = 600
+    let k = 4
+    let array = ThreadSafe(Array(0..<n), mechanism: mechanism)
+    DispatchQueue.concurrentPerform(iterations: k * 2) { i in
+        if i < k {
+            let r = i
+            array.removeAll { $0 >= 0 && $0 < n && $0 % k == r }
+        } else {
+            for j in 0..<100 { array.append(n + (i - k) * 100 + j) }
+        }
+    }
+    let remaining = Set(array.elements)
+    #expect(remaining.isDisjoint(with: Set(0..<n)))
+    #expect(remaining.isSuperset(of: Set(n..<(n + k * 100))))
+}
+
 @Test(arguments: mechanisms) func threadSafeArrayInsertAt(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([1, 3], mechanism: mechanism)
     array.insert(2, at: 1)

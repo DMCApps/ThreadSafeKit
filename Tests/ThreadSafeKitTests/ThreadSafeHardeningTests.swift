@@ -347,6 +347,26 @@ func reentrantWriteInsideReadAbortsOnReaderWriterLock() async {
     }
 }
 
+// A predicate that reads the same instance mid-`removeAll(where:)` is a write-inside-write
+// reentry (the predicate itself doesn't hold the lock, but `removeAll(where:)`'s outer `write`
+// already does) — must trap deterministically, not hang, exactly like the other reentrant-write
+// cases above.
+@Test(.timeLimit(.minutes(1)))
+func reentrantRemoveAllWhereAbortsOnLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .lock)
+        array.removeAll { _ in array.count > 0 }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantRemoveAllWhereAbortsOnReaderWriterLock() async {
+    await #expect(processExitsWith: .failure) {
+        let array = ThreadSafe([1, 2, 3], mechanism: .readerWriterLock)
+        array.removeAll { _ in array.count > 0 }
+    }
+}
+
 // Reentrancy from one subscript modify into another, both on the same instance, via a mutating
 // method call: Swift calls a mutating method on `array[0]` by materializing its address once
 // (via `_modify`), invoking the method on that address, then finalizing — so the method body,
