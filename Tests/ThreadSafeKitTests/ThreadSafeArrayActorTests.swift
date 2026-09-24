@@ -41,6 +41,70 @@ import Testing
     #expect(await array.isEmpty)
 }
 
+@Test func arrayActorRemoveAllWhereRemovesMatchesKeepsOrder() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4, 5, 6])
+    await array.removeAll(where: { $0 % 2 == 0 })
+    #expect(await array.elements == [1, 3, 5])
+}
+
+@Test func arrayActorRemoveAllWhereNoMatchesLeavesArrayUnchanged() async throws {
+    let array = ThreadSafeArray([1, 3, 5])
+    await array.removeAll(where: { $0 % 2 == 0 })
+    #expect(await array.elements == [1, 3, 5])
+}
+
+@Test func arrayActorRemoveAllWhereAllMatchesEmptiesArray() async throws {
+    let array = ThreadSafeArray([2, 4, 6])
+    await array.removeAll(where: { $0 % 2 == 0 })
+    #expect(await array.isEmpty)
+}
+
+@Test func arrayActorRemoveAllWhereOnEmptyArrayIsNoOp() async throws {
+    let array = ThreadSafeArray<Int>()
+    await array.removeAll(where: { _ in true })
+    #expect(await array.isEmpty)
+}
+
+private struct ArrayActorRemoveAllBoom: Error {}
+
+// Mirrors the ThreadSafe-shape test of the same shape: `Array.removeAll(where:)` isn't
+// transactional and may reorder in place before the throw, so only count/set are asserted.
+@Test func arrayActorRemoveAllWhereThrowsPropagatesErrorAndKeepsPartialMutation() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4, 5, 6])
+    await #expect(throws: ArrayActorRemoveAllBoom.self) {
+        try await array.removeAll { value in
+            if value == 4 { throw ArrayActorRemoveAllBoom() }
+            return false
+        }
+    }
+    #expect(await array.count == 6)
+    #expect(Set(await array.elements) == Set([1, 2, 3, 4, 5, 6]))
+    // A follow-up call succeeding is the proof the actor wasn't left in a bad state.
+    await array.append(7)
+    #expect(await array.count == 7)
+}
+
+// Concurrent `removeAll(where:)` calls (one residue class per task) alongside concurrent
+// appends of values >= N: every original value must be gone, every appended value must survive.
+@Test func arrayActorConcurrentRemoveAllWhereAlongsideAppendsIsExact() async throws {
+    let n = 600
+    let k = 4
+    let array = ThreadSafeArray(Array(0..<n))
+    await withTaskGroup(of: Void.self) { group in
+        for r in 0..<k {
+            group.addTask { await array.removeAll { $0 % k == r } }
+        }
+        for w in 0..<k {
+            group.addTask {
+                for j in 0..<100 { await array.append(n + w * 100 + j) }
+            }
+        }
+    }
+    let remaining = Set(await array.elements)
+    #expect(remaining.isDisjoint(with: Set(0..<n)))
+    #expect(remaining.isSuperset(of: Set(n..<(n + k * 100))))
+}
+
 @Test func arrayActorInsertAt() async throws {
     let array = ThreadSafeArray([1, 3])
     await array.insert(2, at: 1)

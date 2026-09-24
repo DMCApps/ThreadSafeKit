@@ -22,7 +22,9 @@ public actor ThreadSafeAtomic<Value: Sendable> {
         value = newValue
     }
 
-    public func mutate(_ mutation: (inout Value) -> Void) {
-        mutation(&value)
+    /// Runs `body` as a single unit of work isolated to this actor, so compound
+    /// operations (check-then-act, read-and-update) are atomic, not just each individual call.
+    public func mutate<T>(_ body: (inout Value) throws -> T) rethrows -> T {
+        try body(&value)
     }
 }

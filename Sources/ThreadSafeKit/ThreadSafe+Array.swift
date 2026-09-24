@@ -24,6 +24,10 @@ extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sen
         write { $0.removeAll(keepingCapacity: keepCapacity) }
     }
 
+    public func removeAll(where shouldBeRemoved: @Sendable (Value.Element) throws -> Bool) rethrows {
+        try write { try $0.removeAll(where: shouldBeRemoved) }
+    }
+
     @discardableResult
     public func removeFirst() -> Value.Element {
         write { $0.removeFirst() }

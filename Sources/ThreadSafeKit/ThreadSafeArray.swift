@@ -70,6 +70,10 @@ public actor ThreadSafeArray<Element: Sendable> {
         storage.removeAll(keepingCapacity: keepCapacity)
     }
 
+    public func removeAll(where shouldBeRemoved: @Sendable (Element) throws -> Bool) rethrows {
+        try storage.removeAll(where: shouldBeRemoved)
+    }
+
     @discardableResult
     public func removeFirst() -> Element {
         storage.removeFirst()
