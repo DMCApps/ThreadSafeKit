@@ -12,9 +12,9 @@ import Darwin
 /// mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — the write lock
 /// is held across the whole get-modify-set via a `_modify` accessor, not just a plain `set`.
 ///
-/// Shape-specific members (`append`/`push`/`pop` for collections, `getValue`/`setValue` for dictionaries,
-/// etc.) are added via constrained extensions in `ThreadSafe+Collection.swift`, `ThreadSafe+Array.swift`,
-/// and `ThreadSafe+Dictionary.swift`.
+/// Shape-specific members (`append`/`popLast` for collections, `updateValue`/`removeValue` for
+/// dictionaries, etc.) are added via constrained extensions in `ThreadSafe+Collection.swift`,
+/// `ThreadSafe+Array.swift`, and `ThreadSafe+Dictionary.swift`.
 ///
 /// Also usable as a property wrapper: `wrappedValue` is a plain-value snapshot (read-only — direct
 /// assignment isn't atomic across read-modify-write), and `projectedValue` is this instance itself, so

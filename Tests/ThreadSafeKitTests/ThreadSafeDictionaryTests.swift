@@ -6,15 +6,15 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeDictionarySetAndGet(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
-    dictionary.setValue(42, forKey: "answer")
-    #expect(dictionary.getValue(forKey: "answer") == 42)
+    dictionary["answer"] = 42
+    #expect(dictionary["answer"] == 42)
     #expect(dictionary.count == 1)
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryInitWithDictionary(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     #expect(dictionary.count == 2)
-    #expect(dictionary.getValue(forKey: "a") == 1)
+    #expect(dictionary["a"] == 1)
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryIsEmptyAndDictionaryProperty(mechanism: ThreadSafeMechanism) throws {
@@ -56,6 +56,17 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     #expect(Set(dictionary.keys) == ["a", "b"])
     #expect(Set(dictionary.values) == [1, 2])
+}
+
+// `keys`/`values` return the same view types as a plain `Dictionary`'s own `keys`/`values`,
+// not `[Key]`/`[Value]` — this pins the static type so a regression back to an `Array` return
+// would fail to compile, not just fail an equality check.
+@Test(arguments: mechanisms) func threadSafeDictionaryKeysAndValuesAreStandardViewTypes(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    let keys: Dictionary<String, Int>.Keys = dictionary.keys
+    let values: Dictionary<String, Int>.Values = dictionary.values
+    #expect(Set(keys) == ["a", "b"])
+    #expect(Set(values) == [1, 2])
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryMapValues(mechanism: ThreadSafeMechanism) throws {
@@ -107,7 +118,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 @Test(arguments: mechanisms) func threadSafeDictionaryConcurrentSetsDoNotDropWrites(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations) { i in
-        dictionary.setValue(i, forKey: i)
+        dictionary[i] = i
     }
     #expect(dictionary.count == concurrencyIterations)
 }
@@ -159,11 +170,11 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations * 2) { i in
         if i % 2 == 0 {
-            dictionary.setValue(i, forKey: i)
+            dictionary[i] = i
         } else {
             _ = dictionary.count
             _ = dictionary.dictionary
-            _ = dictionary.getValue(forKey: 0)
+            _ = dictionary[0]
         }
     }
     #expect(dictionary.count == concurrencyIterations)
@@ -189,7 +200,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
             storage["counter", default: 0] += 1
         }
     }
-    #expect(dictionary.getValue(forKey: "counter") == concurrencyIterations)
+    #expect(dictionary["counter"] == concurrencyIterations)
 }
 
 // Demonstrates the exact problem `mutate` fixes: reading then setting as two
@@ -198,11 +209,11 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 // steps happen under one acquisition.
 @Test(arguments: mechanisms) func threadSafeDictionarySeparateGetAndSetCanLoseUpdates(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
-    let a = dictionary.getValue(forKey: "counter") ?? 0
-    let b = dictionary.getValue(forKey: "counter") ?? 0
-    dictionary.setValue(a + 1, forKey: "counter")
-    dictionary.setValue(b + 1, forKey: "counter")
-    #expect(dictionary.getValue(forKey: "counter") == 1)
+    let a = dictionary["counter"] ?? 0
+    let b = dictionary["counter"] ?? 0
+    dictionary["counter"] = a + 1
+    dictionary["counter"] = b + 1
+    #expect(dictionary["counter"] == 1)
 }
 
 @Test(arguments: mechanisms) func threadSafeDictionaryCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
@@ -247,7 +258,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 @Test(arguments: mechanisms) func threadSafeDictionaryPropertyWrapperReadsSnapshotAndProjectsInstance(mechanism: ThreadSafeMechanism) throws {
     @ThreadSafe(mechanism: mechanism) var values = ["a": 1]
     #expect(values == ["a": 1])
-    $values.setValue(2, forKey: "b")
+    $values["b"] = 2
     #expect(values == ["a": 1, "b": 2])
     #expect($values.count == 2)
 }

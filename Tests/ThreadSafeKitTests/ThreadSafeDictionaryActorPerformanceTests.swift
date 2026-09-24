@@ -11,7 +11,6 @@ func dictionaryActorReadsAreFast() async {
     await assertFast("count") { _ = await dictionary.count }
     await assertFast("isEmpty") { _ = await dictionary.isEmpty }
     await assertFast("dictionary") { _ = await dictionary.dictionary }
-    await assertFast("getValue(forKey:)") { _ = await dictionary.getValue(forKey: "a") }
     await assertFast("subscript(key:) get") { _ = await dictionary["a"] }
     await assertFast("forEach") { await dictionary.forEach { _ = $0 } }
     await assertFast("reduce") { _ = await dictionary.reduce(into: 0) { $0 += $1.value } }
@@ -26,7 +25,6 @@ func dictionaryActorReadsAreFast() async {
 @Test
 func dictionaryActorWritesAreFast() async {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
-    await assertFast("setValue(_:forKey:)") { await dictionary.setValue(1, forKey: "z") }
     await assertFast("removeValue(forKey:)") { _ = await dictionary.removeValue(forKey: "does-not-exist") }
     await assertFast("updateValue(_:forKey:)") { _ = await dictionary.updateValue(1, forKey: "z") }
     await assertFast("merge") { await dictionary.merge(["y": 1]) { old, _ in old } }

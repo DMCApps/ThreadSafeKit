@@ -46,9 +46,9 @@ func dictionaryOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
     var raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
     assertOverheadBounded(
-        "setValue(_:forKey:)",
+        "subscript(key:) set",
         raw: { raw["z"] = 1 },
-        wrapped: { wrapped.setValue(1, forKey: "z") }
+        wrapped: { wrapped["z"] = 1 }
     )
 }
 
@@ -102,7 +102,7 @@ func arrayActorOverheadWritesAreBounded() async {
     await assertOverheadBounded(
         "append",
         raw: { raw.append(0); raw.removeLast() },
-        wrapped: { await wrapped.append(0); _ = await wrapped.pop() }
+        wrapped: { await wrapped.append(0); _ = await wrapped.popLast() }
     )
 }
 
@@ -110,7 +110,7 @@ func arrayActorOverheadWritesAreBounded() async {
 func dictionaryActorOverheadReadsAreBounded() async {
     let raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafeDictionary(["a": 1, "b": 2])
-    await assertOverheadBounded("getValue(forKey:)", raw: { _ = raw["a"] }, wrapped: { _ = await wrapped.getValue(forKey: "a") })
+    await assertOverheadBounded("subscript(key:) get", raw: { _ = raw["a"] }, wrapped: { _ = await wrapped["a"] })
 }
 
 @Test
@@ -118,9 +118,9 @@ func dictionaryActorOverheadWritesAreBounded() async {
     var raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafeDictionary(["a": 1, "b": 2])
     await assertOverheadBounded(
-        "setValue(_:forKey:)",
+        "updateValue(_:forKey:)",
         raw: { raw["z"] = 1 },
-        wrapped: { await wrapped.setValue(1, forKey: "z") }
+        wrapped: { _ = await wrapped.updateValue(1, forKey: "z") }
     )
 }
 

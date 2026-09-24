@@ -4,6 +4,12 @@
 /// alone would give asymmetric, surprising conformance, so it's left out too.
 /// To (de)serialize, snapshot/restore manually at the call site: encode `await elements`,
 /// decode into `ThreadSafeArray(_:)`.
+///
+/// `subscript(index:)` is get-only: an actor subscript can't be assigned from outside the actor —
+/// there's no such thing as an `async` subscript setter. `setElement(_:at:)` is the single-index
+/// atomic write that fills the gap, mirroring `ThreadSafeDictionary.updateValue(_:forKey:)`'s role
+/// for the dictionary shape (`await array.mutate { $0[i] = v }` also works, but touches the whole
+/// array under one call rather than just this index).
 public actor ThreadSafeArray<Element: Sendable> {
     private var storage: [Element]
 
@@ -43,11 +49,7 @@ public actor ThreadSafeArray<Element: Sendable> {
         storage.append(contentsOf: newElements)
     }
 
-    public func push(_ newElement: Element) {
-        storage.insert(newElement, at: 0)
-    }
-
-    public func pop() -> Element? {
+    public func popLast() -> Element? {
         storage.popLast()
     }
 
@@ -153,6 +155,9 @@ public actor ThreadSafeArray<Element: Sendable> {
         storage[index]
     }
 
+    /// The actor-isolated equivalent of `ThreadSafeDictionary.updateValue(_:forKey:)`: an atomic,
+    /// single-index write, since `subscript(index:)` can't have a setter here (see the type's doc
+    /// comment).
     public func setElement(_ newValue: Element, at index: Int) {
         storage[index] = newValue
     }

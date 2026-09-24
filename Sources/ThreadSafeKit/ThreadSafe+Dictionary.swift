@@ -1,47 +1,42 @@
 /// Structural stand-in for `Dictionary` so the keyed-storage extension below can be written generically.
 /// Public only because it must appear in public extension signatures — not intended for outside conformance.
 ///
-/// `allKeys`/`allValues` (rather than `keys`/`values`) avoid clashing with `Dictionary`'s own
-/// `keys: Keys`/`values: Values` properties, which return lazy view types, not `[Key]`/`[KeyedValue]` —
-/// the wrapper below exposes those as `keys`/`values` instead, since the collision is only at this
-/// protocol-witness layer.
+/// It exists because computed properties can't be generic: `keys`/`values`/`dictionary` need a
+/// `where Value == [K: V]` constraint to express their return types, but a plain constraint like
+/// that can't be attached to a protocol extension over an arbitrary keyed-storage shape. Requiring
+/// only members `Dictionary` already has — with associated types standing in for `Keys`/`Values` —
+/// means the `Dictionary` conformance below adds nothing beyond the required `KeyedValue` typealias.
 public protocol _ThreadSafeKeyedStorage {
     associatedtype Key: Hashable
     associatedtype KeyedValue
+    associatedtype Keys: Collection where Keys.Element == Key
+    associatedtype Values: Collection where Values.Element == KeyedValue
     init()
+    var keys: Keys { get }
+    var values: Values { get }
     subscript(key: Key) -> KeyedValue? { get set }
     mutating func removeValue(forKey key: Key) -> KeyedValue?
     mutating func removeAll(keepingCapacity keepCapacity: Bool)
     mutating func merge(_ other: Self, uniquingKeysWith combine: (KeyedValue, KeyedValue) throws -> KeyedValue) rethrows
     @discardableResult
     mutating func updateValue(_ value: KeyedValue, forKey key: Key) -> KeyedValue?
-    var allKeys: [Key] { get }
-    var allValues: [KeyedValue] { get }
 }
 
 extension Dictionary: _ThreadSafeKeyedStorage {
-    public var allKeys: [Key] { Array(keys) }
-    public var allValues: [Value] { Array(values) }
+    public typealias KeyedValue = Value
 }
 
-extension ThreadSafe where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sendable {
+extension ThreadSafe
+where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sendable, Value.Keys: Sendable, Value.Values: Sendable {
     public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 
     public var dictionary: Value { read { $0 } }
 
-    public var keys: [Value.Key] { read { $0.allKeys } }
+    public var keys: Value.Keys { read { $0.keys } }
 
-    public var values: [Value.KeyedValue] { read { $0.allValues } }
-
-    public func getValue(forKey key: Value.Key) -> Value.KeyedValue? {
-        read { $0[key] }
-    }
-
-    public func setValue(_ value: Value.KeyedValue?, forKey key: Value.Key) {
-        write { $0[key] = value }
-    }
+    public var values: Value.Values { read { $0.values } }
 
     @discardableResult
     public func removeValue(forKey key: Value.Key) -> Value.KeyedValue? {

@@ -10,7 +10,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     array.append(2)
     #expect(array.count == 2)
     #expect(array[0] == 1)
-    #expect(array.pop() == 2)
+    #expect(array.popLast() == 2)
 }
 
 @Test(arguments: mechanisms) func threadSafeArrayInitWithSequence(mechanism: ThreadSafeMechanism) throws {
@@ -28,12 +28,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(array.isEmpty == false)
     #expect(array.first == 1)
     #expect(array.last == 3)
-}
-
-@Test(arguments: mechanisms) func threadSafeArrayPush(mechanism: ThreadSafeMechanism) throws {
-    let array = ThreadSafe([2, 3], mechanism: mechanism)
-    array.push(1)
-    #expect(array.elements == [1, 2, 3])
 }
 
 @Test(arguments: mechanisms) func threadSafeArrayRemoveAt(mechanism: ThreadSafeMechanism) throws {
@@ -67,8 +61,8 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(array.elements == [1, 2, 3, 4])
 }
 
-// removeFirst()/removeLast() trap on an empty collection (unlike pop(), the non-trapping variant),
-// so they're a distinct, worthwhile addition rather than a duplicate of pop().
+// removeFirst()/removeLast() trap on an empty collection (unlike popLast(), the non-trapping variant),
+// so they're a distinct, worthwhile addition rather than a duplicate of popLast().
 @Test(arguments: mechanisms) func threadSafeArrayRemoveFirst(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     #expect(array.removeFirst() == 1)
