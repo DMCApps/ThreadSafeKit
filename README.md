@@ -13,60 +13,6 @@ Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendabl
 .package(url: "<repo-url>", from: "1.0.0")
 ```
 
-## Types
-
-One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
-
-Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below.
-
-`Value`'s shape determines which members are available, added via constrained extensions:
-
-| `Value` shape | Members |
-|---|---|
-| Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
-| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
-| `BidirectionalCollection` | + `first`, `last` |
-| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `push`, `removeAll`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `compactMap(_:)`, `sorted(by:)`, `allSatisfy(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
-| `RangeReplaceableCollection`, `Element: Equatable` | + `contains(_:)` |
-| `RangeReplaceableCollection`, `Element: Comparable` | + `sorted()`, `min()`, `max()` |
-| `RangeReplaceableCollection`* | + `remove(at:)`, `insert(_:at:)`, `insert(contentsOf:at:)`, `removeSubrange(_:)`, `replaceSubrange(_:with:)`, `firstIndex(where:)` |
-| `RangeReplaceableCollection`*, `Element: Equatable` | + `firstIndex(of:)` |
-| `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()`, `removeLast()`/`removeLast(_:)` |
-| `MutableCollection`* | + `subscript(index:)` (get + atomic in-place modify) |
-| `MutableCollection & BidirectionalCollection` | + `reverse()` |
-| `MutableCollection & RandomAccessCollection` | + `sort(by:)`, `shuffle()` |
-| `MutableCollection & RandomAccessCollection`, `Element: Comparable` | + `sort()` |
-| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge`, `subscript(key:)` (get + atomic in-place modify), init with no initial value |
-| `Dictionary<Key, Value>` (concrete) | + `mapValues(_:)`, `compactMapValues(_:)`, `filter(_:)` (`-> [Key: Value]`), `contains(where:)` |
-| `SetAlgebra` (e.g. `Set`) | `contains(_:)`, `insert(_:)`, `remove(_:)`, `update(with:)`, `removeAll`, `union(_:)`, `intersection(_:)`, `symmetricDifference(_:)`, `formUnion(_:)`, `formIntersection(_:)`, `subtract(_:)`, `formSymmetricDifference(_:)`, `isSubset(of:)`, `isSuperset(of:)`, `isDisjoint(with:)`, `isStrictSubset(of:)`, `isStrictSuperset(of:)`, init with no initial value |
-
-\* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
-
-`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped rows. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
-
-`RangeReplaceableCollection` and `SetAlgebra` cover their full stdlib surface for `Array`/`Set`-shaped values — 1:1 mirrors of the underlying type's own API, so using `ThreadSafe<[Element]>`/`ThreadSafe<Set<Element>>` feels like using `Array`/`Set` directly. `contains(_:)` (Array shape) is scoped to `RangeReplaceableCollection`, not the general `Collection` row, since `Set` already has its own `SetAlgebra`-based `contains(_:)`. For anything genuinely missing, drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
-
-Alongside `ThreadSafe<Value>`, four real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, `ThreadSafeSet<Element>`, and `ThreadSafeAtomic<Value>`:
-
-| Kind | `ThreadSafe` (sync) | Actor (async) |
-|---|---|---|
-| Single value | `ThreadSafe<Value>` (property wrapper) | `ThreadSafeAtomic<Value>` |
-| Array | `ThreadSafe<[Element]>` (also usable as a property wrapper) | `ThreadSafeArray<Element>` |
-| Dictionary | `ThreadSafe<[Key: Value]>` (also usable as a property wrapper) | `ThreadSafeDictionary<Key, Value>` |
-| Set | `ThreadSafe<Set<Element>>` (also usable as a property wrapper) | `ThreadSafeSet<Element>` |
-
-**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
-
-When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a default-mechanism (`.readerWriterLock`) instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
-
-`ThreadSafe<Value>` is deliberately **not** `Hashable`, even when `Value` is: hashing/equality-for-Set-membership requires a member's hash to never change while it's a member (`Set` never re-buckets an existing element), which a reference type with mutable contents can't promise — mutating a `ThreadSafe` after inserting it into a `Set` or using it as a `Dictionary` key corrupts the table. Deduplicate/hash by content instead: `Set(instances.map(\.wrappedValue))`.
-
-`ThreadSafe<Value>` conforms to `CustomStringConvertible` unconditionally — `description` prints `ThreadSafe(<contents>)` (e.g. `ThreadSafe(42)`, `ThreadSafe([1, 2, 3])`), the same generic form regardless of shape. Actor types don't get this either, for the same synchronous-access reason.
-
-All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
-
-`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/queue/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
-
 ## Usage
 
 ```swift
@@ -77,7 +23,7 @@ _counter.mutate { $0 += 1 }
 $items.append(4)   // items == [1, 2, 3, 4]
 
 @ThreadSafe(mechanism: .lock) var cache = ["key": 1]
-$cache.setValue(2, forKey: "other")   // cache == ["key": 1, "other": 2]
+$cache["other"] = 2   // cache == ["key": 1, "other": 2]
 
 let list = ThreadSafeArray<Int>()
 await list.append(1)
@@ -92,12 +38,12 @@ let all = await list.elements
 
 ### Compound operations with `mutate`
 
-Every individual call (`append`, `setValue`, subscripts, …) is atomic on its own, but two separate calls are not atomic *together* — a read followed by a write can race with another caller's write in between:
+Every individual call (`append`, `updateValue`, subscripts, …) is atomic on its own, but two separate calls are not atomic *together* — a read followed by a write can race with another caller's write in between:
 
 ```swift
 // NOT safe: another writer can slip in between these two calls
-if await dict.getValue(forKey: "x") == nil {
-    await dict.setValue(1, forKey: "x")
+if await dict["x"] == nil {
+    await dict.updateValue(1, forKey: "x")
 }
 ```
 
@@ -154,6 +100,62 @@ await list.elements == (await otherList.elements)   // compare the plain snapsho
 ```
 
 This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `ThreadSafeArray<Element>`/`ThreadSafeDictionary<Key, Value>`/`ThreadSafeSet<Element>`/`ThreadSafeAtomic<Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
+
+## Types
+
+Shape-specific members mirror the standard library's own `Array`/`Dictionary`/`Set` names, so the API can be guessed from stdlib familiarity; the wrapper-only members are `mutate`, `wrappedValue`/`$name`, the snapshot accessors (`elements`/`dictionary`), and `subscript(safe:)`.
+
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
+
+Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below.
+
+`Value`'s shape determines which members are available, added via constrained extensions:
+
+| `Value` shape | Members |
+|---|---|
+| Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
+| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
+| `BidirectionalCollection` | + `first`, `last` |
+| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `removeAll`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `compactMap(_:)`, `sorted(by:)`, `allSatisfy(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
+| `RangeReplaceableCollection`, `Element: Equatable` | + `contains(_:)` |
+| `RangeReplaceableCollection`, `Element: Comparable` | + `sorted()`, `min()`, `max()` |
+| `RangeReplaceableCollection`* | + `remove(at:)`, `insert(_:at:)`, `insert(contentsOf:at:)`, `removeSubrange(_:)`, `replaceSubrange(_:with:)`, `firstIndex(where:)` |
+| `RangeReplaceableCollection`*, `Element: Equatable` | + `firstIndex(of:)` |
+| `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `popLast()`, `removeLast()`/`removeLast(_:)` |
+| `MutableCollection`* | + `subscript(index:)` (get + atomic in-place modify) |
+| `MutableCollection & BidirectionalCollection` | + `reverse()` |
+| `MutableCollection & RandomAccessCollection` | + `sort(by:)`, `shuffle()` |
+| `MutableCollection & RandomAccessCollection`, `Element: Comparable` | + `sort()` |
+| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge`, `subscript(key:)` (get + atomic in-place modify), init with no initial value |
+| `Dictionary<Key, Value>` (concrete) | + `mapValues(_:)`, `compactMapValues(_:)`, `filter(_:)` (`-> [Key: Value]`), `contains(where:)` |
+| `SetAlgebra` (e.g. `Set`) | `elements`, `contains(_:)`, `insert(_:)`, `remove(_:)`, `update(with:)`, `removeAll`, `union(_:)`, `intersection(_:)`, `symmetricDifference(_:)`, `formUnion(_:)`, `formIntersection(_:)`, `subtract(_:)`, `formSymmetricDifference(_:)`, `isSubset(of:)`, `isSuperset(of:)`, `isDisjoint(with:)`, `isStrictSubset(of:)`, `isStrictSuperset(of:)`, init with no initial value |
+
+\* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
+
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped rows. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
+
+`RangeReplaceableCollection` and `SetAlgebra` cover their full stdlib surface for `Array`/`Set`-shaped values — 1:1 mirrors of the underlying type's own API, so using `ThreadSafe<[Element]>`/`ThreadSafe<Set<Element>>` feels like using `Array`/`Set` directly. `contains(_:)` (Array shape) is scoped to `RangeReplaceableCollection`, not the general `Collection` row, since `Set` already has its own `SetAlgebra`-based `contains(_:)`. For anything genuinely missing, drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
+
+Alongside `ThreadSafe<Value>`, four real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, `ThreadSafeSet<Element>`, and `ThreadSafeAtomic<Value>`:
+
+| Kind | `ThreadSafe` (sync) | Actor (async) |
+|---|---|---|
+| Single value | `ThreadSafe<Value>` (property wrapper) | `ThreadSafeAtomic<Value>` |
+| Array | `ThreadSafe<[Element]>` (also usable as a property wrapper) | `ThreadSafeArray<Element>` |
+| Dictionary | `ThreadSafe<[Key: Value]>` (also usable as a property wrapper) | `ThreadSafeDictionary<Key, Value>` |
+| Set | `ThreadSafe<Set<Element>>` (also usable as a property wrapper) | `ThreadSafeSet<Element>` |
+
+**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
+
+When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a default-mechanism (`.readerWriterLock`) instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
+
+`ThreadSafe<Value>` is deliberately **not** `Hashable`, even when `Value` is: hashing/equality-for-Set-membership requires a member's hash to never change while it's a member (`Set` never re-buckets an existing element), which a reference type with mutable contents can't promise — mutating a `ThreadSafe` after inserting it into a `Set` or using it as a `Dictionary` key corrupts the table. Deduplicate/hash by content instead: `Set(instances.map(\.wrappedValue))`.
+
+`ThreadSafe<Value>` conforms to `CustomStringConvertible` unconditionally — `description` prints `ThreadSafe(<contents>)` (e.g. `ThreadSafe(42)`, `ThreadSafe([1, 2, 3])`), the same generic form regardless of shape. Actor types don't get this either, for the same synchronous-access reason.
+
+All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`updateValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
+
+`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/queue/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
 
 ## Testing
 

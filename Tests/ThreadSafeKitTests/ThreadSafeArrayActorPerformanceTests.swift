@@ -24,9 +24,9 @@ func arrayActorWritesAreFast() async {
     let array = ThreadSafeArray([1, 2, 3])
     await assertFast("append") { await array.append(0) }
     await assertFast("append(contentsOf:)") { await array.append(contentsOf: [0]) }
-    await assertFast("push") { await array.push(0) }
-    await assertFast("pop") { _ = await array.pop() }
-    await assertFast("setElement(_:at:)") { await array.setElement(0, at: 0) }
+    await assertFast("insert(_:at:)") { await array.insert(0, at: 0) }
+    await assertFast("popLast") { _ = await array.popLast() }
+    await assertFast("mutate set element") { await array.mutate { $0[0] = 0 } }
     await assertFast("removeFirst") { await array.append(0); _ = await array.removeFirst() }
     await assertFast("removeLast") { await array.append(0); _ = await array.removeLast() }
     await assertFast("reserveCapacity") { await array.reserveCapacity(10) }

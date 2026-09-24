@@ -18,6 +18,11 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.wrappedValue == [1, 2, 3])
 }
 
+@Test(arguments: mechanisms) func threadSafeSetElements(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect(set.elements == [1, 2, 3])
+}
+
 @Test(arguments: mechanisms) func threadSafeSetIsEmpty(mechanism: ThreadSafeMechanism) throws {
     let empty = ThreadSafe<Set<Int>>(mechanism: mechanism)
     #expect(empty.isEmpty)

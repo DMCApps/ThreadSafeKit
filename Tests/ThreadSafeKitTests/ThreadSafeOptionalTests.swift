@@ -130,7 +130,7 @@ func arrayOfOptionalsSupportsNilElements(mechanism: ThreadSafeMechanism) {
     array.append(3)
     #expect(array.elements == [1, nil, 3])
     #expect(array[1] == nil)
-    #expect(array.pop() == 3)
+    #expect(array.popLast() == 3)
     #expect(array.count == 2)
 }
 
@@ -145,35 +145,36 @@ func arrayOfOptionalsConcurrentAppendIncludingNilNeverCrashes(mechanism: ThreadS
 }
 
 // MARK: - Dictionary of optional values: ThreadSafe<[String: Int?]>
-// Genuinely subtle: `Value.KeyedValue` is itself `Int?`, so `setValue`/the keyed subscript
-// take `Int??` — a key can be ABSENT (removeValue / setValue(nil)) or PRESENT-with-a-nil-value
-// (setValue(Int?.none)). These are different states; both must be reachable without crashing.
+// Genuinely subtle: `Value.KeyedValue` is itself `Int?`, so the keyed subscript
+// takes `Int??` — a key can be ABSENT (removeValue / subscript assignment to nil) or
+// PRESENT-with-a-nil-value (subscript assignment to `Int?.none`). These are different
+// states; both must be reachable without crashing.
 
 @Test(arguments: mechanisms)
 func dictionaryOfOptionalValuesDistinguishesAbsentFromPresentNil(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe<[String: Int?]>(mechanism: mechanism)
 
     // Present, with a real value.
-    dictionary.setValue(1, forKey: "a")
-    #expect(dictionary.getValue(forKey: "a") == .some(1))
+    dictionary["a"] = 1
+    #expect(dictionary["a"] == .some(1))
     #expect(dictionary.count == 1)
 
     // Present, but the value itself is nil — note the explicit double-wrap.
-    dictionary.setValue(Int?.none, forKey: "b")
+    dictionary["b"] = Int?.none
     #expect(dictionary.count == 2)
-    #expect(dictionary.getValue(forKey: "b") == .some(nil))
+    #expect(dictionary["b"] == .some(nil))
 
     // Absent entirely — removes the key.
-    dictionary.setValue(nil, forKey: "a")
+    dictionary["a"] = nil
     #expect(dictionary.count == 1)
-    #expect(dictionary.getValue(forKey: "a") == nil)
+    #expect(dictionary["a"] == nil)
 }
 
 @Test(arguments: mechanisms)
 func dictionaryOfOptionalValuesConcurrentMutationNeverCrashes(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe<[Int: Int?]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: 500) { i in
-        dictionary.setValue(i.isMultiple(of: 2) ? Int?.none : i, forKey: i)
+        dictionary[i] = i.isMultiple(of: 2) ? Int?.none : i
     }
     #expect(dictionary.count == 500)
 }

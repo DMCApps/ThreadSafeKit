@@ -32,8 +32,8 @@ func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     assertFast("append") { array.append(0) }
     assertFast("append(contentsOf:)") { array.append(contentsOf: [0]) }
-    assertFast("push") { array.push(0) }
-    assertFast("pop") { _ = array.pop() }
+    assertFast("insert(_:at:)") { array.insert(0, at: 0) }
+    assertFast("popLast") { _ = array.popLast() }
     assertFast("subscript(index:) set") { array[0] = 0 }
     assertFast("removeFirst") { array.append(0); _ = array.removeFirst() }
     assertFast("removeLast") { array.append(0); _ = array.removeLast() }
@@ -73,7 +73,6 @@ func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("count") { _ = dictionary.count }
     assertFast("isEmpty") { _ = dictionary.isEmpty }
     assertFast("dictionary") { _ = dictionary.dictionary }
-    assertFast("getValue(forKey:)") { _ = dictionary.getValue(forKey: "a") }
     assertFast("subscript(key:) get") { _ = dictionary["a"] }
     assertFast("keys") { _ = dictionary.keys }
     assertFast("values") { _ = dictionary.values }
@@ -86,7 +85,6 @@ func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
 @Test(arguments: mechanisms)
 func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
-    assertFast("setValue(_:forKey:)") { dictionary.setValue(1, forKey: "z") }
     assertFast("subscript(key:) set") { dictionary["z"] = 1 }
     assertFast("removeValue(forKey:)") { _ = dictionary.removeValue(forKey: "does-not-exist") }
     assertFast("updateValue(_:forKey:)") { _ = dictionary.updateValue(1, forKey: "z") }
@@ -166,15 +164,15 @@ func arrayAppendCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanis
 }
 
 @Test(arguments: mechanisms)
-func dictionarySetValueCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanism) {
+func dictionarySubscriptSetCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanism) {
     let small = ThreadSafe(Dictionary(uniqueKeysWithValues: (0..<smallPreload).map { ($0, $0) }), mechanism: mechanism)
-    let smallNsPerOp = averageNanoseconds(over: writesPerSample) { small.setValue(0, forKey: -1) }
+    let smallNsPerOp = averageNanoseconds(over: writesPerSample) { small[-1] = 0 }
 
     let large = ThreadSafe(Dictionary(uniqueKeysWithValues: (0..<largePreload).map { ($0, $0) }), mechanism: mechanism)
-    let largeNsPerOp = averageNanoseconds(over: writesPerSample) { large.setValue(0, forKey: -1) }
+    let largeNsPerOp = averageNanoseconds(over: writesPerSample) { large[-1] = 0 }
 
     #expect(
         largeNsPerOp < smallNsPerOp * maxSlowdown,
-        "setValue at \(largePreload) entries (\(largeNsPerOp) ns/op) is more than \(maxSlowdown)x the cost at \(smallPreload) entries (\(smallNsPerOp) ns/op) — per-write cost is scaling with collection size again"
+        "subscript set at \(largePreload) entries (\(largeNsPerOp) ns/op) is more than \(maxSlowdown)x the cost at \(smallPreload) entries (\(smallNsPerOp) ns/op) — per-write cost is scaling with collection size again"
     )
 }

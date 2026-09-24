@@ -4,6 +4,9 @@
 /// alone would give asymmetric, surprising conformance, so it's left out too.
 /// To (de)serialize, snapshot/restore manually at the call site: encode `await elements`,
 /// decode into `ThreadSafeArray(_:)`.
+///
+/// `subscript(index:)` is get-only: an actor subscript can't be assigned from outside the actor, so
+/// to write an element use `await array.mutate { $0[i] = v }` instead.
 public actor ThreadSafeArray<Element: Sendable> {
     private var storage: [Element]
 
@@ -43,11 +46,7 @@ public actor ThreadSafeArray<Element: Sendable> {
         storage.append(contentsOf: newElements)
     }
 
-    public func push(_ newElement: Element) {
-        storage.insert(newElement, at: 0)
-    }
-
-    public func pop() -> Element? {
+    public func popLast() -> Element? {
         storage.popLast()
     }
 
@@ -151,10 +150,6 @@ public actor ThreadSafeArray<Element: Sendable> {
 
     public subscript(index: Int) -> Element {
         storage[index]
-    }
-
-    public func setElement(_ newValue: Element, at index: Int) {
-        storage[index] = newValue
     }
 
     public subscript(safe index: Int) -> Element? {

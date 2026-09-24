@@ -4,15 +4,15 @@ import Testing
 
 @Test func dictionaryActorSetAndGet() async throws {
     let dictionary = ThreadSafeDictionary<String, Int>()
-    await dictionary.setValue(42, forKey: "answer")
-    #expect(await dictionary.getValue(forKey: "answer") == 42)
+    await dictionary.updateValue(42, forKey: "answer")
+    #expect(await dictionary["answer"] == 42)
     #expect(await dictionary.count == 1)
 }
 
 @Test func dictionaryActorInitWithDictionary() async throws {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
     #expect(await dictionary.count == 2)
-    #expect(await dictionary.getValue(forKey: "a") == 1)
+    #expect(await dictionary["a"] == 1)
 }
 
 @Test func dictionaryActorIsEmptyAndDictionaryProperty() async throws {
@@ -92,13 +92,13 @@ import Testing
 
 @Test func dictionaryActorSubscript() async throws {
     let dictionary = ThreadSafeDictionary<String, Int>()
-    await dictionary.setValue(1, forKey: "a")
+    await dictionary.updateValue(1, forKey: "a")
     #expect(await dictionary["a"] == 1)
 }
 
-@Test func dictionaryActorSubscriptNilRemoves() async throws {
+@Test func dictionaryActorRemoveValueRemoves() async throws {
     let dictionary = ThreadSafeDictionary(["a": 1])
-    await dictionary.setValue(nil, forKey: "a")
+    await dictionary.removeValue(forKey: "a")
     #expect(await dictionary.isEmpty)
 }
 
@@ -106,7 +106,7 @@ import Testing
     let dictionary = ThreadSafeDictionary<Int, Int>()
     await withTaskGroup(of: Void.self) { group in
         for i in 0..<concurrencyIterations {
-            group.addTask { await dictionary.setValue(i, forKey: i) }
+            group.addTask { await dictionary.updateValue(i, forKey: i) }
         }
     }
     #expect(await dictionary.count == concurrencyIterations)
@@ -122,11 +122,11 @@ import Testing
         for i in 0..<(concurrencyIterations * 2) {
             group.addTask {
                 if i % 2 == 0 {
-                    await dictionary.setValue(i, forKey: i)
+                    await dictionary.updateValue(i, forKey: i)
                 } else {
                     _ = await dictionary.count
                     _ = await dictionary.dictionary
-                    _ = await dictionary.getValue(forKey: 0)
+                    _ = await dictionary[0]
                 }
             }
         }
@@ -158,7 +158,7 @@ import Testing
             }
         }
     }
-    #expect(await dictionary.getValue(forKey: "counter") == concurrencyIterations)
+    #expect(await dictionary["counter"] == concurrencyIterations)
 }
 
 // Demonstrates the exact problem `mutate` fixes: reading then setting as two
@@ -167,9 +167,9 @@ import Testing
 // steps happen under one actor call.
 @Test func dictionaryActorSeparateGetAndSetCanLoseUpdates() async throws {
     let dictionary = ThreadSafeDictionary<String, Int>()
-    let a = await dictionary.getValue(forKey: "counter") ?? 0
-    let b = await dictionary.getValue(forKey: "counter") ?? 0
-    await dictionary.setValue(a + 1, forKey: "counter")
-    await dictionary.setValue(b + 1, forKey: "counter")
-    #expect(await dictionary.getValue(forKey: "counter") == 1)
+    let a = await dictionary["counter"] ?? 0
+    let b = await dictionary["counter"] ?? 0
+    await dictionary.updateValue(a + 1, forKey: "counter")
+    await dictionary.updateValue(b + 1, forKey: "counter")
+    #expect(await dictionary["counter"] == 1)
 }

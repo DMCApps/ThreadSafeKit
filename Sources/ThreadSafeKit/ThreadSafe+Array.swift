@@ -20,10 +20,6 @@ extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sen
         write { $0.append(contentsOf: newElements) }
     }
 
-    public func push(_ newElement: Value.Element) {
-        write { $0.insert(newElement, at: $0.startIndex) }
-    }
-
     public func removeAll(keepingCapacity keepCapacity: Bool = false) {
         write { $0.removeAll(keepingCapacity: keepCapacity) }
     }
@@ -125,7 +121,7 @@ where Value: RangeReplaceableCollection, Value.Element: Sendable & Equatable, Va
 
 extension ThreadSafe
 where Value: RangeReplaceableCollection & BidirectionalCollection, Value.Element: Sendable {
-    public func pop() -> Value.Element? {
+    public func popLast() -> Value.Element? {
         write { $0.popLast() }
     }
 

@@ -23,20 +23,12 @@ public actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable> {
         storage
     }
 
-    public var keys: [Key] {
-        Array(storage.keys)
+    public var keys: Dictionary<Key, Value>.Keys {
+        storage.keys
     }
 
-    public var values: [Value] {
-        Array(storage.values)
-    }
-
-    public func getValue(forKey key: Key) -> Value? {
-        storage[key]
-    }
-
-    public func setValue(_ value: Value?, forKey key: Key) {
-        storage[key] = value
+    public var values: Dictionary<Key, Value>.Values {
+        storage.values
     }
 
     @discardableResult

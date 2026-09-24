@@ -4,13 +4,13 @@ import Testing
 
 private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
-@Test(arguments: mechanisms) func threadSafeArrayShapeAppendPushPop(mechanism: ThreadSafeMechanism) throws {
+@Test(arguments: mechanisms) func threadSafeArrayShapeAppendInsertPopLast(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
     array.append(2)
     array.append(3)
-    array.push(1)
+    array.insert(1, at: 0)
     #expect(array.elements == [1, 2, 3])
-    #expect(array.pop() == 3)
+    #expect(array.popLast() == 3)
     #expect(array.count == 2)
     #expect(array.first == 1)
     #expect(array.last == 2)
@@ -24,9 +24,9 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeDictionaryShapeGetSetRemove(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
-    dictionary.setValue(1, forKey: "a")
+    dictionary["a"] = 1
     dictionary["b"] = 2
-    #expect(dictionary.getValue(forKey: "a") == 1)
+    #expect(dictionary["a"] == 1)
     #expect(dictionary["b"] == 2)
     #expect(dictionary.count == 2)
     #expect(dictionary.removeValue(forKey: "a") == 1)
@@ -46,6 +46,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(items == [1])
 
     @ThreadSafe var cache: [String: Int] = [:]
-    $cache.setValue(1, forKey: "a")
+    $cache["a"] = 1
     #expect(cache == ["a": 1])
 }

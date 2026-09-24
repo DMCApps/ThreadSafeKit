@@ -69,23 +69,22 @@ func mergeReleasesLockWhenCombineThrows(mechanism: ThreadSafeMechanism) {
     #expect(throws: Boom.self) {
         try dictionary.merge(["a": 2]) { _, _ in throw Boom() }
     }
-    #expect(dictionary.getValue(forKey: "a") == 1)
+    #expect(dictionary["a"] == 1)
 }
 
 // MARK: - Uncovered member behaviour
 
 @Test(arguments: mechanisms)
-func popOnEmptyReturnsNil(mechanism: ThreadSafeMechanism) {
+func popLastOnEmptyReturnsNil(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
-    #expect(array.pop() == nil)
+    #expect(array.popLast() == nil)
 }
 
 @Test(arguments: mechanisms)
-func setValueNilRemovesKey(mechanism: ThreadSafeMechanism) {
-    // Distinct from the existing test, which exercises the subscript setter.
+func subscriptAssignmentToNilRemovesKey(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
-    dictionary.setValue(nil, forKey: "a")
-    #expect(dictionary.getValue(forKey: "a") == nil)
+    dictionary["a"] = nil
+    #expect(dictionary["a"] == nil)
     #expect(dictionary.count == 1)
 }
 
@@ -196,7 +195,7 @@ func concurrentDictionaryWritesPreserveEveryEntry(mechanism: ThreadSafeMechanism
     DispatchQueue.concurrentPerform(iterations: writers) { w in
         for j in 0..<perWriter {
             let k = w * perWriter + j
-            dictionary.setValue(k * 2, forKey: k)
+            dictionary[k] = k * 2
         }
     }
     #expect(dictionary.count == writers * perWriter)
@@ -227,7 +226,7 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
     DispatchQueue.concurrentPerform(iterations: 64) { i in
         switch i % 4 {
         case 0: for _ in 0..<200 { array.append(i) }
-        case 1: for _ in 0..<200 { _ = array.pop() }
+        case 1: for _ in 0..<200 { _ = array.popLast() }
         case 2: for _ in 0..<200 { _ = array.map { $0 } }
         default: for _ in 0..<200 { _ = array.count; _ = array[safe: 0] }
         }
@@ -389,7 +388,7 @@ func reentrantWriteInsideWriteAbortsOnReaderWriterLock_Dictionary() async {
     await #expect(processExitsWith: .failure) {
         let dict = ThreadSafe(["a": 1], mechanism: .readerWriterLock)
         dict.mutate { _ in
-            dict.setValue(2, forKey: "b")
+            dict["b"] = 2
         }
     }
 }

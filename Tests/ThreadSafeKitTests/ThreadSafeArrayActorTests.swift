@@ -8,7 +8,7 @@ import Testing
     await array.append(2)
     #expect(await array.count == 2)
     #expect(await array[0] == 1)
-    #expect(await array.pop() == 2)
+    #expect(await array.popLast() == 2)
 }
 
 @Test func arrayActorInitWithSequence() async throws {
@@ -26,12 +26,6 @@ import Testing
     #expect(await array.isEmpty == false)
     #expect(await array.first == 1)
     #expect(await array.last == 3)
-}
-
-@Test func arrayActorPush() async throws {
-    let array = ThreadSafeArray([2, 3])
-    await array.push(1)
-    #expect(await array.elements == [1, 2, 3])
 }
 
 @Test func arrayActorRemoveAt() async throws {
@@ -65,8 +59,8 @@ import Testing
     #expect(await array.elements == [1, 2, 3, 4])
 }
 
-// removeFirst()/removeLast() trap on an empty collection (unlike pop(), the non-trapping variant),
-// so they're a distinct, worthwhile addition rather than a duplicate of pop().
+// removeFirst()/removeLast() trap on an empty collection (unlike popLast(), the non-trapping variant),
+// so they're a distinct, worthwhile addition rather than a duplicate of popLast().
 @Test func arrayActorRemoveFirst() async throws {
     let array = ThreadSafeArray([1, 2, 3])
     #expect(await array.removeFirst() == 1)
@@ -205,9 +199,9 @@ import Testing
     #expect(await array[safe: 3] == nil)
 }
 
-@Test func arrayActorSetElement() async throws {
+@Test func arrayActorMutateSetsElement() async throws {
     let array = ThreadSafeArray([1, 2, 3])
-    await array.setElement(20, at: 1)
+    await array.mutate { $0[1] = 20 }
     #expect(await array.elements == [1, 20, 3])
 }
 

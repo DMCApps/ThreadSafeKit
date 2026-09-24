@@ -3,6 +3,8 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 
+    public var elements: Value { read { $0 } }
+
     public func contains(_ member: Value.Element) -> Bool {
         read { $0.contains(member) }
     }
