@@ -49,7 +49,7 @@ import Testing
 
 @Test func arrayActorForEach() async throws {
     let array = ArrayActor([1, 2, 3])
-    let sum = Atomic(wrappedValue: 0)
+    let sum = ThreadSafeAtomic(wrappedValue: 0)
     await array.forEach { element in sum.mutate { $0 += element } }
     #expect(sum.wrappedValue == 6)
 }
