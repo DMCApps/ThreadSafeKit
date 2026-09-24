@@ -5,7 +5,7 @@ import Testing
 // Performance coverage for `ThreadSafeDictionary`: every public member stays within a generous
 // absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
 
-@Test
+@Test(.tags(.performance))
 func dictionaryActorReadsAreFast() async {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
     await assertFast("count") { _ = await dictionary.count }
@@ -22,7 +22,7 @@ func dictionaryActorReadsAreFast() async {
     await assertFast("contains(where:)") { _ = await dictionary.contains { $0.value > 0 } }
 }
 
-@Test
+@Test(.tags(.performance))
 func dictionaryActorWritesAreFast() async {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
     await assertFast("removeValue(forKey:)") { _ = await dictionary.removeValue(forKey: "does-not-exist") }
@@ -31,7 +31,7 @@ func dictionaryActorWritesAreFast() async {
     await assertFast("mutate") { await dictionary.mutate { $0["z"] = 1 } }
 }
 
-@Test
+@Test(.tags(.performance))
 func dictionaryActorRemoveAllIsFast() async {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
     await assertFast("removeAll") { await dictionary.removeAll() }

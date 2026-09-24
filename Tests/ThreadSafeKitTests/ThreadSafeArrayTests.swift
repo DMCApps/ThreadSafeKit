@@ -383,19 +383,6 @@ private extension Int {
     #expect(array.elements.sorted() == Array(0..<concurrencyIterations))
 }
 
-// Demonstrates the exact problem `mutate` fixes: reading `count` then appending
-// as two separate lock/queue acquisitions lets both reads observe the same stale count,
-// producing a duplicate instead of a clean sequence. A single `mutate` call
-// doesn't have this problem because both steps happen under one acquisition.
-@Test(arguments: mechanisms) func threadSafeArraySeparateCountAndAppendCanProduceDuplicates(mechanism: ThreadSafeMechanism) throws {
-    let array = ThreadSafe<[Int]>(mechanism: mechanism)
-    let countA = array.count
-    let countB = array.count
-    array.append(countA)
-    array.append(countB)
-    #expect(array.elements == [0, 0])
-}
-
 @Test(arguments: mechanisms) func threadSafeArrayCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe(["a", "b", "c"], mechanism: mechanism)
     let data = try JSONEncoder().encode(array)

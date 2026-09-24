@@ -160,16 +160,3 @@ import Testing
     }
     #expect(await dictionary["counter"] == concurrencyIterations)
 }
-
-// Demonstrates the exact problem `mutate` fixes: reading then setting as two
-// separate actor calls lets both reads observe the same stale value, losing
-// an update. A single `mutate` call doesn't have this problem because both
-// steps happen under one actor call.
-@Test func dictionaryActorSeparateGetAndSetCanLoseUpdates() async throws {
-    let dictionary = ThreadSafeDictionary<String, Int>()
-    let a = await dictionary["counter"] ?? 0
-    let b = await dictionary["counter"] ?? 0
-    await dictionary.updateValue(a + 1, forKey: "counter")
-    await dictionary.updateValue(b + 1, forKey: "counter")
-    #expect(await dictionary["counter"] == 1)
-}

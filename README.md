@@ -225,3 +225,12 @@ Also run with the Thread Sanitizer before trusting a change to locking/concurren
 ```
 swift test --sanitize=thread
 ```
+
+Timing-based tests (fixed absolute-time or relative-overhead ceilings) are tagged `.performance` and flaky under CI/parallel load; `swift test --filter`/`--skip` only support regexes, not tags, on this toolchain, so name-based regexes select them instead:
+
+```
+swift test --skip 'Fast|Bounded|CostDoesNotScaleWithCollectionSize'   # correctness only
+swift test --filter 'Fast|Bounded|CostDoesNotScaleWithCollectionSize' # performance only
+```
+
+New performance tests must be tagged `.performance` **and** named to end in `Fast`, `Bounded`, or `CostDoesNotScaleWithCollectionSize`, or these commands will misclassify them.

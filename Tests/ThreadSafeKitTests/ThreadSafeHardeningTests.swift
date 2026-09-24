@@ -220,18 +220,41 @@ func concurrentAtomicReadModifyWriteLosesNothing(mechanism: ThreadSafeMechanism)
 
 @Test(arguments: mechanisms)
 func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism) {
-    // Exercises append/pop/removeAt/subscript/map/forEach all at once so the
-    // barrier discipline is tested against more than one write member.
-    let array = ThreadSafe(Array(0..<500), mechanism: mechanism)
+    // Exercises append/pop/map/count/subscript all at once so the barrier discipline is tested
+    // against more than one write member. `array.count == array.elements.count` is true by
+    // construction (both just read `storage`) and proves nothing, so instead: track successful
+    // pops via a separate thread-safe counter (`popLast()`'s success is inherently racy — the
+    // array can run dry mid-test once appends stop outpacing pops), derive the exact expected
+    // count from that, and confirm every surviving element traces back to either the initial
+    // range or an appended value — a torn write would produce something outside both.
+    let initial = Array(0..<500)
+    let array = ThreadSafe(initial, mechanism: mechanism)
+    let successfulPops = ThreadSafe(0, mechanism: .lock)
+    let appendIterations = (0..<64).filter { $0 % 4 == 0 }
+    let appends = appendIterations.count * 200
+
     DispatchQueue.concurrentPerform(iterations: 64) { i in
         switch i % 4 {
-        case 0: for _ in 0..<200 { array.append(i) }
-        case 1: for _ in 0..<200 { _ = array.popLast() }
+        case 0:
+            // Offset past `initial` so appended values are distinguishable from the seed range.
+            for _ in 0..<200 { array.append(1_000 + i) }
+        case 1:
+            for _ in 0..<200 {
+                if array.popLast() != nil {
+                    successfulPops.mutate { $0 += 1 }
+                }
+            }
         case 2: for _ in 0..<200 { _ = array.map { $0 } }
         default: for _ in 0..<200 { _ = array.count; _ = array[safe: 0] }
         }
     }
-    #expect(array.count == array.elements.count)
+
+    let expectedCount = 500 + appends - successfulPops.wrappedValue
+    #expect(array.count == expectedCount)
+
+    let initialValues = Set(initial)
+    let appendedValues = Set(appendIterations.map { 1_000 + $0 })
+    #expect(array.elements.allSatisfy { initialValues.contains($0) || appendedValues.contains($0) })
 }
 
 // MARK: - Reentrancy

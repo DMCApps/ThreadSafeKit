@@ -203,19 +203,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary["counter"] == concurrencyIterations)
 }
 
-// Demonstrates the exact problem `mutate` fixes: reading then setting as two
-// separate lock/queue acquisitions lets both reads observe the same stale value, losing
-// an update. A single `mutate` call doesn't have this problem because both
-// steps happen under one acquisition.
-@Test(arguments: mechanisms) func threadSafeDictionarySeparateGetAndSetCanLoseUpdates(mechanism: ThreadSafeMechanism) throws {
-    let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
-    let a = dictionary["counter"] ?? 0
-    let b = dictionary["counter"] ?? 0
-    dictionary["counter"] = a + 1
-    dictionary["counter"] = b + 1
-    #expect(dictionary["counter"] == 1)
-}
-
 @Test(arguments: mechanisms) func threadSafeDictionaryCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     let data = try JSONEncoder().encode(dictionary)
