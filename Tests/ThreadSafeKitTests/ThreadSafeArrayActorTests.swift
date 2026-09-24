@@ -47,6 +47,145 @@ import Testing
     #expect(await array.isEmpty)
 }
 
+@Test func arrayActorInsertAt() async throws {
+    let array = ThreadSafeArray([1, 3])
+    await array.insert(2, at: 1)
+    #expect(await array.elements == [1, 2, 3])
+}
+
+@Test func arrayActorAppendContentsOf() async throws {
+    let array = ThreadSafeArray([1])
+    await array.append(contentsOf: [2, 3])
+    #expect(await array.elements == [1, 2, 3])
+}
+
+@Test func arrayActorInsertContentsOfAt() async throws {
+    let array = ThreadSafeArray([1, 4])
+    await array.insert(contentsOf: [2, 3], at: 1)
+    #expect(await array.elements == [1, 2, 3, 4])
+}
+
+// removeFirst()/removeLast() trap on an empty collection (unlike pop(), the non-trapping variant),
+// so they're a distinct, worthwhile addition rather than a duplicate of pop().
+@Test func arrayActorRemoveFirst() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.removeFirst() == 1)
+    #expect(await array.elements == [2, 3])
+}
+
+@Test func arrayActorRemoveFirstN() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.removeFirst(2)
+    #expect(await array.elements == [3])
+}
+
+@Test func arrayActorRemoveLast() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.removeLast() == 3)
+    #expect(await array.elements == [1, 2])
+}
+
+@Test func arrayActorRemoveLastN() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.removeLast(2)
+    #expect(await array.elements == [1])
+}
+
+@Test func arrayActorRemoveSubrange() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    await array.removeSubrange(1..<3)
+    #expect(await array.elements == [1, 4])
+}
+
+@Test func arrayActorReplaceSubrange() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.replaceSubrange(1..<2, with: [20, 30])
+    #expect(await array.elements == [1, 20, 30, 3])
+}
+
+@Test func arrayActorReserveCapacity() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.reserveCapacity(100)
+    #expect(await array.elements == [1, 2, 3])
+}
+
+@Test func arrayActorReverse() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.reverse()
+    #expect(await array.elements == [3, 2, 1])
+}
+
+@Test func arrayActorSort() async throws {
+    let array = ThreadSafeArray([3, 1, 2])
+    await array.sort()
+    #expect(await array.elements == [1, 2, 3])
+}
+
+@Test func arrayActorSortBy() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.sort(by: >)
+    #expect(await array.elements == [3, 2, 1])
+}
+
+@Test func arrayActorShuffleKeepsSameElements() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4, 5])
+    await array.shuffle()
+    #expect(await array.elements.sorted() == [1, 2, 3, 4, 5])
+}
+
+@Test func arrayActorFirstIndexWhere() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.firstIndex(where: { $0 == 2 }) == 1)
+    #expect(await array.firstIndex(where: { $0 == 4 }) == nil)
+}
+
+@Test func arrayActorFirstIndexOf() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.firstIndex(of: 2) == 1)
+    #expect(await array.firstIndex(of: 4) == nil)
+}
+
+@Test func arrayActorContains() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.contains(2))
+    #expect(await array.contains(4) == false)
+}
+
+@Test func arrayActorFilter() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    #expect(await array.filter { $0 % 2 == 0 } == [2, 4])
+}
+
+@Test func arrayActorCompactMap() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    #expect(await array.compactMap { $0 % 2 == 0 ? $0 : nil } == [2, 4])
+}
+
+@Test func arrayActorSortedAndSortedBy() async throws {
+    let array = ThreadSafeArray([3, 1, 2])
+    #expect(await array.sorted() == [1, 2, 3])
+    #expect(await array.sorted(by: >) == [3, 2, 1])
+    #expect(await array.elements == [3, 1, 2])
+}
+
+@Test func arrayActorMinAndMax() async throws {
+    let array = ThreadSafeArray([3, 1, 2])
+    #expect(await array.min() == 1)
+    #expect(await array.max() == 3)
+}
+
+@Test func arrayActorAllSatisfy() async throws {
+    let array = ThreadSafeArray([2, 4, 6])
+    #expect(await array.allSatisfy { $0 % 2 == 0 })
+    #expect(await array.allSatisfy { $0 > 2 } == false)
+}
+
+@Test func arrayActorPrefixAndSuffix() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    #expect(await array.prefix(2) == [1, 2])
+    #expect(await array.suffix(2) == [3, 4])
+}
+
 @Test func arrayActorForEach() async throws {
     let array = ThreadSafeArray([1, 2, 3])
     let sum = ThreadSafe(wrappedValue: 0)
