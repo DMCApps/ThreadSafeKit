@@ -1,11 +1,11 @@
 extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sendable {
-    public convenience init(mechanism: ThreadSafeMechanism = .dispatchQueue) {
+    public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 
     public convenience init(
         _ elements: some Sequence<Value.Element>,
-        mechanism: ThreadSafeMechanism = .dispatchQueue
+        mechanism: ThreadSafeMechanism = .readerWriterLock
     ) {
         self.init(wrappedValue: Value(elements), mechanism: mechanism)
     }

@@ -1,5 +1,5 @@
 extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
-    public convenience init(mechanism: ThreadSafeMechanism = .dispatchQueue) {
+    public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 

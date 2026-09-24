@@ -25,7 +25,7 @@ extension Dictionary: _ThreadSafeKeyedStorage {
 }
 
 extension ThreadSafe where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sendable {
-    public convenience init(mechanism: ThreadSafeMechanism = .dispatchQueue) {
+    public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 

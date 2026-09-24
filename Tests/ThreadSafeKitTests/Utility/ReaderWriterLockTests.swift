@@ -8,7 +8,9 @@ import Testing
 // bare, *unguarded* box mutated only under the lock under test — never a second `ThreadSafe`/other
 // lock around it, which would silently provide the real exclusion and mask a broken `ReaderWriterLock`.
 
-private final class Box<Value> {
+// `@unchecked`: every mutation below happens only while holding the `ReaderWriterLock` under
+// test, which is the actual thing providing the synchronization the compiler can't see.
+private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
 }

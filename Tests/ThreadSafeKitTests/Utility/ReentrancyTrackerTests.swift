@@ -9,9 +9,13 @@ import Testing
 // `beginAccess` pairs it with an `endAccess` before returning, so it doesn't leave a stale entry in
 // this thread's tracker state for whichever other test next reuses the same thread.
 
-private final class Probe {}
+// `@unchecked`: stateless, only ever used for its identity (`ObjectIdentifier`).
+private final class Probe: @unchecked Sendable {}
 
-private final class Box<Value> {
+// `@unchecked`: `value` is written on the spawned thread, then read on the caller's thread only
+// after `done.wait()` returns — the semaphore signal/wait pair is what actually establishes the
+// happens-before edge the compiler can't see here.
+private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
 }

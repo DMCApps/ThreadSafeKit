@@ -5,9 +5,9 @@ import Darwin
 #endif
 
 /// Lock/queue-backed thread-safe wrapper around any `Sendable` value. Pick the backing mechanism via
-/// ``ThreadSafeMechanism``; defaults to a concurrent `DispatchQueue` with barrier writes (reads run in
-/// parallel, writes are exclusive). `.lock`/`.readerWriterLock` are the other two — see
-/// ``ThreadSafeMechanism`` for the tradeoffs.
+/// ``ThreadSafeMechanism``; defaults to `.readerWriterLock` (concurrent reads, exclusive writes, no
+/// GCD overhead). `.lock`/`.dispatchQueue` are the other two — see ``ThreadSafeMechanism`` for the
+/// tradeoffs and measured per-mechanism costs.
 ///
 /// Shape-specific subscripts (`ts[i]`, `dict[k]`) are atomic for the *entire* access under every
 /// mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — the write lock
@@ -49,7 +49,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // provides — so no extra synchronization is needed on the property access.
     private var parkedRelease: DispatchSemaphore?
 
-    public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .dispatchQueue) {
+    public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .readerWriterLock) {
         storage = wrappedValue
         switch mechanism {
         case .lock:
@@ -61,7 +61,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
-    public convenience init(_ value: Value, mechanism: ThreadSafeMechanism = .dispatchQueue) {
+    public convenience init(_ value: Value, mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: value, mechanism: mechanism)
     }
 
