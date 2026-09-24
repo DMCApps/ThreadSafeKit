@@ -57,21 +57,6 @@ extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sen
     }
 
     @inlinable
-    public func compactMap<T: Sendable>(_ transform: @Sendable (Value.Element) throws -> T?) rethrows -> [T] {
-        try read { try $0.compactMap(transform) }
-    }
-
-    @inlinable
-    public func sorted(by areInIncreasingOrder: @Sendable (Value.Element, Value.Element) throws -> Bool) rethrows -> [Value.Element] {
-        try read { try $0.sorted(by: areInIncreasingOrder) }
-    }
-
-    @inlinable
-    public func allSatisfy(_ predicate: @Sendable (Value.Element) throws -> Bool) rethrows -> Bool {
-        try read { try $0.allSatisfy(predicate) }
-    }
-
-    @inlinable
     public func prefix(_ maxLength: Int) -> [Value.Element] {
         read { Array($0.prefix(maxLength)) }
     }
@@ -86,23 +71,6 @@ extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sen
     @inlinable
     public func contains(_ element: Value.Element) -> Bool {
         read { $0.contains(element) }
-    }
-}
-
-extension ThreadSafe where Value: RangeReplaceableCollection, Value.Element: Sendable & Comparable {
-    @inlinable
-    public func sorted() -> [Value.Element] {
-        read { $0.sorted() }
-    }
-
-    @inlinable
-    public func min() -> Value.Element? {
-        read { $0.min() }
-    }
-
-    @inlinable
-    public func max() -> Value.Element? {
-        read { $0.max() }
     }
 }
 
@@ -182,6 +150,11 @@ extension ThreadSafe where Value: MutableCollection, Value.Element: Sendable, Va
             defer { endModify() }
             yield &storage[index]
         }
+    }
+
+    @inlinable
+    public func swapAt(_ i: Value.Index, _ j: Value.Index) {
+        write { $0.swapAt(i, j) }
     }
 }
 

@@ -107,6 +107,10 @@ public actor ThreadSafeArray<Element: Sendable> {
         storage.reserveCapacity(n)
     }
 
+    public func swapAt(_ i: Int, _ j: Int) {
+        storage.swapAt(i, j)
+    }
+
     public func reverse() {
         storage.reverse()
     }
@@ -121,6 +125,30 @@ public actor ThreadSafeArray<Element: Sendable> {
 
     public func firstIndex(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Int? {
         try storage.firstIndex(where: predicate)
+    }
+
+    public func first(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Element? {
+        try storage.first(where: predicate)
+    }
+
+    public func contains(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Bool {
+        try storage.contains(where: predicate)
+    }
+
+    public func count(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Int {
+        try storage.count(where: predicate)
+    }
+
+    public func min(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows -> Element? {
+        try storage.min(by: areInIncreasingOrder)
+    }
+
+    public func max(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows -> Element? {
+        try storage.max(by: areInIncreasingOrder)
+    }
+
+    public func randomElement() -> Element? {
+        storage.randomElement()
     }
 
     public func filter(_ isIncluded: @Sendable (Element) throws -> Bool) rethrows -> [Element] {
@@ -153,6 +181,20 @@ public actor ThreadSafeArray<Element: Sendable> {
 
     public func map<T: Sendable>(_ transform: @Sendable (Element) throws -> T) rethrows -> [T] {
         try storage.map(transform)
+    }
+
+    public func reduce<Result: Sendable>(
+        into initial: Result,
+        _ updateAccumulatingResult: @Sendable (inout Result, Element) throws -> Void
+    ) rethrows -> Result {
+        try storage.reduce(into: initial, updateAccumulatingResult)
+    }
+
+    public func reduce<Result: Sendable>(
+        _ initialResult: Result,
+        _ nextPartialResult: @Sendable (Result, Element) throws -> Result
+    ) rethrows -> Result {
+        try storage.reduce(initialResult, nextPartialResult)
     }
 
     public subscript(index: Int) -> Element {

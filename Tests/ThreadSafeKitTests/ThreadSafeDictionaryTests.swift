@@ -250,3 +250,143 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect($values.count == 2)
 }
 
+@Test(arguments: mechanisms) func threadSafeDictionarySubscriptDefault(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1], mechanism: mechanism)
+    #expect(dictionary["a", default: 0] == 1)
+    #expect(dictionary["missing", default: 0] == 0)
+    dictionary["missing", default: 0] += 5
+    #expect(dictionary["missing"] == 5)
+}
+
+// `d[k, default: 0] += 1` holds the write lock across the whole get-modify-set (see the
+// subscript's doc comment in ThreadSafe+Dictionary.swift), so many concurrent increments on the
+// same missing-then-created key must sum exactly.
+@Test(arguments: mechanisms) func threadSafeDictionarySubscriptDefaultCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
+    let workers = 8
+    let perWorker = 250
+    DispatchQueue.concurrentPerform(iterations: workers) { _ in
+        for _ in 0..<perWorker { dictionary["counter", default: 0] += 1 }
+    }
+    #expect(dictionary["counter"] == workers * perWorker)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryPopFirst(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1], mechanism: mechanism)
+    let popped = dictionary.popFirst()
+    #expect(popped?.key == "a")
+    #expect(popped?.value == 1)
+    #expect(dictionary.isEmpty)
+
+    let empty = ThreadSafe<[String: Int]>(mechanism: mechanism)
+    #expect(empty.popFirst() == nil)
+}
+
+// Concurrent drains must remove every entry exactly once — no duplicates, no drops.
+@Test(arguments: mechanisms) func threadSafeDictionaryConcurrentPopFirstDrainsExactlyOnce(mechanism: ThreadSafeMechanism) throws {
+    let n = 2_000
+    let dictionary = ThreadSafe(Dictionary(uniqueKeysWithValues: (0..<n).map { ($0, $0 * 2) }), mechanism: mechanism)
+    let popped = ThreadSafe<[Int]>(mechanism: .lock)
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+        while let (key, value) = dictionary.popFirst() {
+            #expect(value == key * 2)
+            popped.append(key)
+        }
+    }
+    #expect(dictionary.isEmpty)
+    #expect(popped.elements.count == n)
+    #expect(Set(popped.elements) == Set(0..<n))
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryReserveCapacity(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    dictionary.reserveCapacity(100)
+    #expect(dictionary.dictionary == ["a": 1, "b": 2])
+}
+
+// Concurrent `reserveCapacity` calls interleaved with concurrent writes must not corrupt or
+// drop any write — `reserveCapacity` only affects unobservable storage capacity.
+@Test(arguments: mechanisms) func threadSafeDictionaryConcurrentReserveCapacityDoesNotCorruptConcurrentWrites(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
+    let n = concurrencyIterations
+    DispatchQueue.concurrentPerform(iterations: n * 2) { i in
+        if i < n {
+            dictionary[i] = i
+        } else {
+            dictionary.reserveCapacity(1_000)
+        }
+    }
+    #expect(dictionary.count == n)
+    #expect(dictionary.dictionary.allSatisfy { $0.value == $0.key })
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryMergeSequenceOfPairs(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1], mechanism: mechanism)
+    dictionary.merge([("a", 2), ("b", 3)]) { _, new in new }
+    #expect(dictionary.dictionary == ["a": 2, "b": 3])
+}
+
+// Each writer merges a disjoint key range, so no `uniquingKeysWith` collision is ever exercised
+// concurrently — this is purely a lost-write check for the sequence-of-pairs overload.
+@Test(arguments: mechanisms) func threadSafeDictionaryConcurrentMergeSequenceOfPairsPreservesEveryEntry(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
+    let writers = 8
+    let perWriter = 250
+    DispatchQueue.concurrentPerform(iterations: writers) { w in
+        let pairs = (0..<perWriter).map { (w * perWriter + $0, w) }
+        dictionary.merge(pairs) { _, new in new }
+    }
+    #expect(dictionary.count == writers * perWriter)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryFirstWhere(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(dictionary.first(where: { $0.value == 2 })?.key == "b")
+    #expect(dictionary.first(where: { $0.value == 3 }) == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryCountWhere(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2, "c": 3], mechanism: mechanism)
+    #expect(dictionary.count(where: { $0.value > 1 }) == 2)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryMinByAndMaxBy(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 3, "b": 1, "c": 2], mechanism: mechanism)
+    #expect(dictionary.min(by: { $0.value < $1.value })?.key == "b")
+    #expect(dictionary.max(by: { $0.value < $1.value })?.key == "a")
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryReduceNonInto(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    let sum = dictionary.reduce(0) { $0 + $1.value }
+    #expect(sum == 3)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryRandomElement(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    let element = dictionary.randomElement()
+    #expect(element != nil)
+    #expect(["a", "b"].contains(element!.key))
+
+    let empty = ThreadSafe<[String: Int]>(mechanism: mechanism)
+    #expect(empty.randomElement() == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryAllSatisfy(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 2, "b": 4], mechanism: mechanism)
+    #expect(dictionary.allSatisfy { $0.value % 2 == 0 })
+    #expect(dictionary.allSatisfy { $0.value > 2 } == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryCompactMap(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    let values = dictionary.compactMap { $0.value == 1 ? nil : $0.value }
+    #expect(values == [2])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionarySortedBy(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 3, "b": 1, "c": 2], mechanism: mechanism)
+    let sorted = dictionary.sorted(by: { $0.value < $1.value })
+    #expect(sorted.map(\.key) == ["b", "c", "a"])
+}
+

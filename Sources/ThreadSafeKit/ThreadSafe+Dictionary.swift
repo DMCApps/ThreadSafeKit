@@ -82,10 +82,13 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
     }
 }
 
-// `mapValues`/`compactMapValues`/`filter`/`contains(where:)` change the value type or return a plain
-// dictionary/bool, rather than generalizing to arbitrary keyed storage — kept off
+// `mapValues`/`compactMapValues`/`filter`/`reserveCapacity`/`popFirst`/the default subscript/the
+// sequence-of-pairs `merge` overload change the value type, return a plain dictionary/tuple, or
+// only exist on the concrete type, rather than generalizing to arbitrary keyed storage — kept off
 // `_ThreadSafeKeyedStorage` (per its doc comment) and constrained directly to the concrete `Dictionary`
-// shape instead.
+// shape instead. `contains(where:)` used to live here too; it's now on the general `Collection`
+// extension (`ThreadSafe+Collection.swift`), since `Dictionary.Element` is already `(key: Key, value:
+// KeyedValue)`, giving Array/Set/Dictionary the same member with identical behavior.
 extension ThreadSafe {
     @inlinable
     public func mapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
@@ -109,9 +112,43 @@ extension ThreadSafe {
     }
 
     @inlinable
-    public func contains<Key: Hashable & Sendable, KeyedValue: Sendable>(
-        where predicate: @Sendable ((key: Key, value: KeyedValue)) throws -> Bool
-    ) rethrows -> Bool where Value == [Key: KeyedValue] {
-        try read { try $0.contains(where: predicate) }
+    public func reserveCapacity<Key: Hashable & Sendable, KeyedValue: Sendable>(
+        _ minimumCapacity: Int
+    ) where Value == [Key: KeyedValue] {
+        write { $0.reserveCapacity(minimumCapacity) }
+    }
+
+    @inlinable
+    public func popFirst<Key: Hashable & Sendable, KeyedValue: Sendable>() -> (key: Key, value: KeyedValue)?
+    where Value == [Key: KeyedValue] {
+        write { $0.popFirst() }
+    }
+
+    /// The stdlib's sequence-of-pairs `merge` overload, alongside the whole-dictionary one above.
+    /// `some Sequence<(Key, KeyedValue)>` (an unlabeled-tuple `Element`) never matches a `Dictionary`
+    /// argument (whose `Element` is the labeled tuple `(key:, value:)`), so this can never collide
+    /// with a call passing another dictionary — that always resolves to the overload above instead.
+    @inlinable
+    public func merge<Key: Hashable & Sendable, KeyedValue: Sendable>(
+        _ other: some Sequence<(Key, KeyedValue)> & Sendable,
+        uniquingKeysWith combine: @Sendable (KeyedValue, KeyedValue) throws -> KeyedValue
+    ) rethrows where Value == [Key: KeyedValue] {
+        try write { try $0.merge(other, uniquingKeysWith: combine) }
+    }
+
+    /// `d[k, default: 0] += 1` is atomic for the whole access — the write lock is held across the
+    /// entire get-modify-set via `_modify`, same as `subscript(key:)` above. `d[k, default: 0] =
+    /// d[k, default: 0] + 1` is NOT atomic: that's two separate accesses (a `get`, then a full
+    /// `set`), so another writer can slip in between them.
+    @inlinable
+    public subscript<Key: Hashable & Sendable, KeyedValue: Sendable>(
+        key: Key, default defaultValue: @autoclosure () -> KeyedValue
+    ) -> KeyedValue where Value == [Key: KeyedValue] {
+        get { read { $0[key] } ?? defaultValue() }
+        _modify {
+            beginModify()
+            defer { endModify() }
+            yield &storage[key, default: defaultValue()]
+        }
     }
 }

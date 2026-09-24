@@ -330,3 +330,67 @@ private struct ArrayActorRemoveAllBoom: Error {}
     }
     #expect(await array.elements.sorted() == Array(0..<concurrencyIterations))
 }
+
+@Test func arrayActorSwapAt() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    await array.swapAt(0, 2)
+    #expect(await array.elements == [3, 2, 1])
+}
+
+// Mirrors `threadSafeArrayConcurrentSwapAtNeverLosesElements`: an even total number of swaps
+// must restore the start order, with no element lost or duplicated.
+@Test func arrayActorConcurrentSwapAtNeverLosesElements() async throws {
+    let array = ThreadSafeArray([0, 1])
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<8 {
+            group.addTask {
+                for _ in 0..<250 { await array.swapAt(0, 1) }
+            }
+        }
+    }
+    #expect(await array.elements == [0, 1])
+}
+
+@Test func arrayActorFirstWhere() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    #expect(await array.first(where: { $0 % 2 == 0 }) == 2)
+    #expect(await array.first(where: { $0 > 10 }) == nil)
+}
+
+@Test func arrayActorContainsWhere() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    #expect(await array.contains(where: { $0 == 2 }) == true)
+    #expect(await array.contains(where: { $0 == 4 }) == false)
+}
+
+@Test func arrayActorCountWhere() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4, 5, 6])
+    #expect(await array.count(where: { $0 % 2 == 0 }) == 3)
+}
+
+@Test func arrayActorMinByAndMaxBy() async throws {
+    let array = ThreadSafeArray([3, 1, 2])
+    #expect(await array.min(by: <) == 1)
+    #expect(await array.max(by: <) == 3)
+}
+
+@Test func arrayActorReduceNonInto() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    let sum = await array.reduce(0, +)
+    #expect(sum == 10)
+}
+
+@Test func arrayActorReduceInto() async throws {
+    let array = ThreadSafeArray([1, 2, 3, 4])
+    let sum = await array.reduce(into: 0) { $0 += $1 }
+    #expect(sum == 10)
+}
+
+@Test func arrayActorRandomElement() async throws {
+    let array = ThreadSafeArray([1, 2, 3])
+    let element = await array.randomElement()
+    #expect([1, 2, 3].contains(element!))
+
+    let empty = ThreadSafeArray<Int>()
+    #expect(await empty.randomElement() == nil)
+}

@@ -55,6 +55,11 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
     }
 
     @inlinable
+    public func subtracting(_ other: Value) -> Value {
+        read { $0.subtracting(other) }
+    }
+
+    @inlinable
     public func formUnion(_ other: Value) {
         write { $0.formUnion(other) }
     }
@@ -97,5 +102,39 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
     @inlinable
     public func isStrictSuperset(of other: Value) -> Bool {
         read { $0.isStrictSuperset(of: other) }
+    }
+}
+
+// `popFirst`/`removeFirst`/`filter`/`reserveCapacity`/`removeAll(keepingCapacity:)` aren't part of
+// `SetAlgebra` — they're declared directly on the concrete `Set` type in the standard library — so,
+// per `_ThreadSafeKeyedStorage`'s doc comment on the dictionary side, they're kept off the generic
+// `SetAlgebra` extension above and constrained directly to the concrete `Set` shape instead.
+extension ThreadSafe {
+    @inlinable
+    public func popFirst<Element: Hashable & Sendable>() -> Element? where Value == Set<Element> {
+        write { $0.popFirst() }
+    }
+
+    @discardableResult
+    @inlinable
+    public func removeFirst<Element: Hashable & Sendable>() -> Element where Value == Set<Element> {
+        write { $0.removeFirst() }
+    }
+
+    @inlinable
+    public func filter<Element: Hashable & Sendable>(
+        _ isIncluded: @Sendable (Element) throws -> Bool
+    ) rethrows -> Set<Element> where Value == Set<Element> {
+        try read { try $0.filter(isIncluded) }
+    }
+
+    @inlinable
+    public func reserveCapacity<Element: Hashable & Sendable>(_ minimumCapacity: Int) where Value == Set<Element> {
+        write { $0.reserveCapacity(minimumCapacity) }
+    }
+
+    @inlinable
+    public func removeAll<Element: Hashable & Sendable>(keepingCapacity keepCapacity: Bool = false) where Value == Set<Element> {
+        write { $0.removeAll(keepingCapacity: keepCapacity) }
     }
 }

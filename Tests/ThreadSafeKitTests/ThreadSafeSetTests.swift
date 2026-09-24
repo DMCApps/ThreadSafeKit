@@ -202,3 +202,169 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(members == [1, 2, 3, 4])
     #expect($members.count == 4)
 }
+
+@Test(arguments: mechanisms) func threadSafeSetSubtracting(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect(set.subtracting([2, 3]) == [1])
+    #expect(set.wrappedValue == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetPopFirst(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1]), mechanism: mechanism)
+    #expect(set.popFirst() == 1)
+    #expect(set.isEmpty)
+
+    let empty = ThreadSafe<Set<Int>>(mechanism: mechanism)
+    #expect(empty.popFirst() == nil)
+}
+
+// Concurrent drains must remove every element exactly once — no duplicates, no drops.
+@Test(arguments: mechanisms) func threadSafeSetConcurrentPopFirstDrainsExactlyOnce(mechanism: ThreadSafeMechanism) throws {
+    let n = 2_000
+    let set = ThreadSafe(Set(0..<n), mechanism: mechanism)
+    let popped = ThreadSafe<[Int]>(mechanism: .lock)
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+        while let value = set.popFirst() {
+            popped.append(value)
+        }
+    }
+    #expect(set.isEmpty)
+    #expect(popped.elements.count == n)
+    #expect(Set(popped.elements) == Set(0..<n))
+}
+
+@Test(arguments: mechanisms) func threadSafeSetRemoveFirst(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1]), mechanism: mechanism)
+    #expect(set.removeFirst() == 1)
+    #expect(set.isEmpty)
+}
+
+// `removeFirst()` traps on an empty set (unlike `popFirst()`), so this drains safely by calling
+// it exactly once per seeded element — one `concurrentPerform` iteration per element, rather than
+// looping each worker to empty — instead of a racy isEmpty-then-removeFirst check-then-act.
+// Concurrent calls must still remove every element exactly once, no duplicates, no drops.
+@Test(arguments: mechanisms) func threadSafeSetConcurrentRemoveFirstDrainsExactlyOnce(mechanism: ThreadSafeMechanism) throws {
+    let n = 2_000
+    let set = ThreadSafe(Set(0..<n), mechanism: mechanism)
+    let removed = ThreadSafe<[Int]>(mechanism: .lock)
+    DispatchQueue.concurrentPerform(iterations: n) { _ in
+        removed.append(set.removeFirst())
+    }
+    #expect(set.isEmpty)
+    #expect(removed.elements.count == n)
+    #expect(Set(removed.elements) == Set(0..<n))
+}
+
+@Test(arguments: mechanisms) func threadSafeSetReserveCapacity(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    set.reserveCapacity(100)
+    #expect(set.wrappedValue == [1, 2, 3])
+}
+
+// Concurrent `reserveCapacity` calls interleaved with concurrent inserts must not corrupt or
+// drop any insert — `reserveCapacity` only affects unobservable storage capacity.
+@Test(arguments: mechanisms) func threadSafeSetConcurrentReserveCapacityDoesNotCorruptConcurrentInserts(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe<Set<Int>>(mechanism: mechanism)
+    let n = concurrencyIterations
+    DispatchQueue.concurrentPerform(iterations: n * 2) { i in
+        if i < n {
+            set.insert(i)
+        } else {
+            set.reserveCapacity(1_000)
+        }
+    }
+    #expect(set.count == n)
+    #expect(set.wrappedValue == Set(0..<n))
+}
+
+@Test(arguments: mechanisms) func threadSafeSetRemoveAllKeepingCapacity(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    set.removeAll(keepingCapacity: true)
+    #expect(set.isEmpty)
+}
+
+// Every `removeAll(keepingCapacity:)` call unconditionally empties the set, so whichever call is
+// the LAST one in the actual (lock-enforced) execution order leaves the set empty at that instant;
+// only inserts after that point can leave anything behind, and inserted values are always >= n —
+// so no original seed value can ever survive, deterministically, regardless of interleaving.
+@Test(arguments: mechanisms) func threadSafeSetRemoveAllKeepingCapacityConcurrentWithInsertsNeverLeavesSeedValues(mechanism: ThreadSafeMechanism) throws {
+    let n = 600
+    let k = 4
+    let set = ThreadSafe(Set(0..<n), mechanism: mechanism)
+    DispatchQueue.concurrentPerform(iterations: k * 2) { i in
+        if i < k {
+            for _ in 0..<100 { set.removeAll(keepingCapacity: true) }
+        } else {
+            for j in 0..<100 { set.insert(n + (i - k) * 100 + j) }
+        }
+    }
+    let remaining = set.wrappedValue
+    #expect(remaining.isDisjoint(with: Set(0..<n)))
+    #expect(remaining.isSubset(of: Set(n..<(n + k * 100))))
+}
+
+@Test(arguments: mechanisms) func threadSafeSetFilterReturnsSet(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3, 4]), mechanism: mechanism)
+    let evens: Set<Int> = set.filter { $0 % 2 == 0 }
+    #expect(evens == [2, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetFirstWhere(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect(set.first(where: { $0 == 2 }) == 2)
+    #expect(set.first(where: { $0 == 4 }) == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetContainsWhere(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect(set.contains(where: { $0 == 2 }) == true)
+    #expect(set.contains(where: { $0 == 4 }) == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetCountWhere(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3, 4]), mechanism: mechanism)
+    #expect(set.count(where: { $0 % 2 == 0 }) == 2)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetMinByAndMaxBy(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([3, 1, 2]), mechanism: mechanism)
+    #expect(set.min(by: <) == 1)
+    #expect(set.max(by: <) == 3)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetReduceNonInto(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3, 4]), mechanism: mechanism)
+    let sum = set.reduce(0, +)
+    #expect(sum == 10)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetRandomElement(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect([1, 2, 3].contains(set.randomElement()!))
+
+    let empty = ThreadSafe<Set<Int>>(mechanism: mechanism)
+    #expect(empty.randomElement() == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetAllSatisfy(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([2, 4, 6]), mechanism: mechanism)
+    #expect(set.allSatisfy { $0 % 2 == 0 })
+    #expect(set.allSatisfy { $0 > 2 } == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeSetCompactMap(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3, 4]), mechanism: mechanism)
+    #expect(Set(set.compactMap { $0 % 2 == 0 ? $0 : nil }) == [2, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetSortedBy(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([3, 1, 2]), mechanism: mechanism)
+    #expect(set.sorted(by: >) == [3, 2, 1])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetSortedMinMax(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([3, 1, 2]), mechanism: mechanism)
+    #expect(set.sorted() == [1, 2, 3])
+    #expect(set.min() == 1)
+    #expect(set.max() == 3)
+}

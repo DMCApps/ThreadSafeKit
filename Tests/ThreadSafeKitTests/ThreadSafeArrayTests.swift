@@ -429,3 +429,57 @@ private extension Int {
     #expect(items == [1, 2, 3, 4])
     #expect($items.count == 4)
 }
+
+@Test(arguments: mechanisms) func threadSafeArraySwapAt(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.swapAt(0, 2)
+    #expect(array.elements == [3, 2, 1])
+}
+
+// 8 workers × 250 swaps of indices 0 and 1 is an even total, so the array must end in its start
+// order. A `swapAt` that didn't hold the write lock across the whole swap could lose or duplicate
+// an element instead.
+@Test(arguments: mechanisms) func threadSafeArrayConcurrentSwapAtNeverLosesElements(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([0, 1], mechanism: mechanism)
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+        for _ in 0..<250 { array.swapAt(0, 1) }
+    }
+    #expect(array.elements == [0, 1])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayFirstWhere(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    #expect(array.first(where: { $0 % 2 == 0 }) == 2)
+    #expect(array.first(where: { $0 > 10 }) == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayContainsWhere(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.contains(where: { $0 == 2 }) == true)
+    #expect(array.contains(where: { $0 == 4 }) == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayCountWhere(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4, 5, 6], mechanism: mechanism)
+    #expect(array.count(where: { $0 % 2 == 0 }) == 3)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayMinByAndMaxBy(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([3, 1, 2], mechanism: mechanism)
+    #expect(array.min(by: <) == 1)
+    #expect(array.max(by: <) == 3)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayReduceNonInto(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    let sum = array.reduce(0, +)
+    #expect(sum == 10)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRandomElement(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect([1, 2, 3].contains(array.randomElement()!))
+
+    let empty = ThreadSafe<[Int]>(mechanism: mechanism)
+    #expect(empty.randomElement() == nil)
+}
