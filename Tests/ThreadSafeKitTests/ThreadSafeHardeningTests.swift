@@ -8,7 +8,7 @@ import Testing
 // storage duplicate, real content-asserting concurrency stress, reentrancy
 // behaviour, and the genuine `init(_ sequence:)` overload.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 private struct Boom: Error {}
 
@@ -17,7 +17,7 @@ private struct Boom: Error {}
 @Test
 func equalValuesCompareEqualAcrossMechanisms() {
     let a = ThreadSafe([1: "a", 2: "b"], mechanism: .lock)
-    let b = ThreadSafe([2: "b", 1: "a"], mechanism: .dispatchQueue)
+    let b = ThreadSafe([2: "b", 1: "a"], mechanism: .readerWriterLock)
     #expect(a == b)
 }
 
@@ -237,44 +237,28 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 
 // MARK: - Reentrancy
 
-// Every mechanism now traps same-thread reentrancy deterministically via `ReentrancyTracker`
+// Both mechanisms trap same-thread reentrancy deterministically via `ReentrancyTracker`
 // (ThreadSafe.swift) — checked, and its process-terminating side effect performed, *before*
 // attempting to acquire any lock, so a reentrant call always aborts instead of ever having a
-// chance to hang. This replaces the old `.dispatchQueue`-only `DispatchSpecificKey` check, which
-// depended on being called synchronously inside a `queue.sync`, and which — combined with the
-// then-"safe" nested-read-inside-read row below — is exactly the design `ReentrancyTracker`'s doc
-// comment explains was insufficient once `pthread_rwlock` and the `.dispatchQueue` subscript
-// `_modify`'s "parked" queue entered the picture:
+// chance to hang:
 //
-//   nested read  inside read   -> now traps, all three mechanisms. Previously "safe" for
-//                                  `.dispatchQueue` (`read` takes `storage` by value and runs a
-//                                  non-barrier `sync`, so two nested non-barrier reads never
-//                                  registered as an exclusivity conflict) — but that was never
-//                                  true for `.readerWriterLock`: `pthread_rwlock_rdlock` doesn't
-//                                  reliably self-detect same-thread recursion, so a nested read
-//                                  could deadlock the instant a writer queued between the two
-//                                  reads. Rather than leave one mechanism's reentrancy behaviour
-//                                  looser than the others', all three now reject it uniformly.
-//   nested read  inside write  -> traps, all three mechanisms
-//   nested write inside write  -> traps, all three mechanisms
-//   nested write inside read   -> traps, all three mechanisms. This is the row that used to hang
-//                                  forever on `.dispatchQueue` before `reentrancyKey` was added
-//                                  (the outer non-barrier `sync` never claimed libdispatch's
-//                                  drain-owner slot, so the inner barrier `sync` just waited
-//                                  forever for its own thread to finish). `ReentrancyTracker`
-//                                  covers this the same way it covers everything else.
+//   nested read  inside read   -> traps, both mechanisms. `pthread_rwlock_rdlock` doesn't
+//                                  reliably self-detect same-thread recursion, so without
+//                                  `ReentrancyTracker` a nested read could deadlock the instant a
+//                                  writer queued between the two reads.
+//   nested read  inside write  -> traps, both mechanisms
+//   nested write inside write  -> traps, both mechanisms
+//   nested write inside read   -> traps, both mechanisms
 //   reentrant subscript `_modify` (nested inside another access, or inside its own yielded
-//   mutation, e.g. a mutating operation whose argument reads the same instance) -> traps, all
-//   three mechanisms. `.dispatchQueue`'s subscript `_modify` "parks" the barrier queue rather
-//   than running inside a `sync` call, so nothing GCD-native would have caught this either;
-//   `ReentrancyTracker` is what makes it deterministic.
+//   mutation, e.g. a mutating operation whose argument reads the same instance) -> traps, both
+//   mechanisms.
 //
 // None of these hang — every mechanism aborts the process right away. This is inherent to
-// lock/queue mutual exclusion, not a bug: `mutate`/`write`/a subscript's in-place modify
-// intentionally hold the lock/barrier/rwlock across the whole operation, so calling back into the
-// same instance from inside one is always unsafe. Swift Testing's exit tests let these be real,
-// passing regression tests instead of permanently-disabled documentation — each just confirms the
-// process terminates abnormally (and quickly, well under the time limit) rather than hanging.
+// lock mutual exclusion, not a bug: `mutate`/`write`/a subscript's in-place modify intentionally
+// hold the lock across the whole operation, so calling back into the same instance from inside
+// one is always unsafe. Swift Testing's exit tests let these be real, passing regression tests
+// instead of permanently-disabled documentation — each just confirms the process terminates
+// abnormally (and quickly, well under the time limit) rather than hanging.
 
 #if os(macOS)
 // `#expect(processExitsWith:)`'s closure is re-invoked in a freshly-spawned child process, so it
@@ -287,21 +271,13 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 // exhaust the test runner's own cooperative thread pool under load, causing an intermittent hang
 // or spurious crash unrelated to the actual behaviour under test. The four base combinations are
 // exhaustively covered per mechanism; the modify/bounds-checking additions below are each
-// covered once broadly (all three mechanisms) or once representatively (`.lock` only, where the
+// covered once broadly (both mechanisms) or once representatively (`.lock` only, where the
 // mechanism doesn't change what's being proven) rather than the full cross product.
 
 @Test(.timeLimit(.minutes(1)))
 func reentrantReadInsideReadAbortsOnLock() async {
     await #expect(processExitsWith: .failure) {
         let array = ThreadSafe([1, 2, 3], mechanism: .lock)
-        array.forEach { _ in _ = array.count }
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
-func reentrantReadInsideReadAbortsOnDispatchQueue() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
         array.forEach { _ in _ = array.count }
     }
 }
@@ -318,17 +294,6 @@ func reentrantReadInsideReadAbortsOnReaderWriterLock() async {
 func reentrantReadInsideMutateAbortsOnLock() async {
     await #expect(processExitsWith: .failure) {
         let array = ThreadSafe([1, 2, 3], mechanism: .lock)
-        array.mutate { elements in
-            elements.append(4)
-            _ = array.count
-        }
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
-func reentrantReadInsideMutateAbortsOnDispatchQueue() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
         array.mutate { elements in
             elements.append(4)
             _ = array.count
@@ -358,16 +323,6 @@ func reentrantWriteInsideWriteAbortsOnLock() async {
 }
 
 @Test(.timeLimit(.minutes(1)))
-func reentrantWriteInsideWriteAbortsOnDispatchQueue() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
-        array.mutate { _ in
-            array.mutate { $0.append(5) }
-        }
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
 func reentrantWriteInsideWriteAbortsOnReaderWriterLock() async {
     await #expect(processExitsWith: .failure) {
         let array = ThreadSafe([1, 2, 3], mechanism: .readerWriterLock)
@@ -381,14 +336,6 @@ func reentrantWriteInsideWriteAbortsOnReaderWriterLock() async {
 func reentrantWriteInsideReadAbortsOnLock() async {
     await #expect(processExitsWith: .failure) {
         let array = ThreadSafe([1, 2, 3], mechanism: .lock)
-        array.forEach { _ in array.append(4) }
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
-func reentrantWriteInsideReadAbortsOnDispatchQueue() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
         array.forEach { _ in array.append(4) }
     }
 }
@@ -426,40 +373,10 @@ func reentrantModifyInsideModifyAbortsOnLock() async {
 }
 
 @Test(.timeLimit(.minutes(1)))
-func reentrantModifyInsideModifyAbortsOnDispatchQueue() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([ReentrancyProbe(value: 1), ReentrancyProbe(value: 2)], mechanism: .dispatchQueue)
-        array[0].incrementAndModify(at: 1, in: array)
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
 func reentrantModifyInsideModifyAbortsOnReaderWriterLock() async {
     await #expect(processExitsWith: .failure) {
         let array = ThreadSafe([ReentrancyProbe(value: 1), ReentrancyProbe(value: 2)], mechanism: .readerWriterLock)
         array[0].incrementAndModify(at: 1, in: array)
-    }
-}
-
-// Regression test for the original bug this whole redesign traces back to: nested write inside
-// read used to hang forever on `.dispatchQueue`, and contention from a real concurrent writer
-// thread (queued behind the outer read, waiting for the barrier) made the hang even more likely
-// to manifest in practice than the single-threaded row above. This must trap, not hang, even
-// under that contention.
-@Test(.timeLimit(.minutes(1)))
-func reentrantWriteInsideReadTrapsRatherThanHangsUnderConcurrentWriterContention() async {
-    await #expect(processExitsWith: .failure) {
-        let array = ThreadSafe([1, 2, 3], mechanism: .dispatchQueue)
-        let writerQueued = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
-            writerQueued.signal()
-            array.append(999)
-        }
-        array.forEach { _ in
-            writerQueued.wait()
-            Thread.sleep(forTimeInterval: 0.05)  // let the concurrent writer queue behind the read
-            array.append(4)  // reentrant write inside read — must trap, not hang
-        }
     }
 }
 
@@ -559,20 +476,6 @@ func lockMechanismDoesNotRetainInitialValue() {
     #expect(subject.isEmpty)
     // The lock's copy is now empty, so nothing should reference the canary.
     #expect(Canary.liveCount == 0, "`storage` is holding a stale duplicate of the initial value")
-}
-
-@Test
-func dispatchQueueMechanismDoesNotRetainInitialValue() {
-    Canary.reset()
-    let subject: ThreadSafe<[Canary]> = {
-        let initial = [Canary()]
-        return ThreadSafe(initial, mechanism: .dispatchQueue)
-    }()
-    #expect(Canary.liveCount == 1)
-
-    subject.removeAll()
-    #expect(subject.isEmpty)
-    #expect(Canary.liveCount == 0)
 }
 
 // MARK: - description ordering for the dictionary shape

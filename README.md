@@ -15,9 +15,9 @@ Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendabl
 
 ## Types
 
-One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes, no GCD overhead), `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included), or `.dispatchQueue` (concurrent queue + barrier writes, kept for compatibility with the previous default — see `ThreadSafeMechanism`'s doc comment for why `.readerWriterLock` supersedes it on every measured axis). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking/queueing) rather than by the compiler either way.
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
 
-Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under every mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below. On `.dispatchQueue` specifically, a subscript's in-place modify (`+=`, `?.append`, or plain `ts[i] = v`) costs meaningfully more than a simple call (tens of microseconds, dominated by spawning a dedicated thread — see `beginModify()`'s doc comment in ThreadSafe.swift for why it can't just borrow one from GCD's shared pool). Prefer `.lock` or `.readerWriterLock` for code that does compound subscript edits on a hot path or from the main thread.
+Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below.
 
 `Value`'s shape determines which members are available, added via constrained extensions:
 
@@ -159,4 +159,10 @@ This also rules out `@MainActor`-style isolated conformances: that mechanism tie
 
 ```
 swift test
+```
+
+Also run with the Thread Sanitizer before trusting a change to locking/concurrency behavior — plain `swift test` won't catch a data race, and this package has had real races only TSan caught in the past:
+
+```
+swift test --sanitize=thread
 ```

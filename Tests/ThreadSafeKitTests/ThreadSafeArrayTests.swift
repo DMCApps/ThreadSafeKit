@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeArrayAppendAndRead(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
@@ -219,10 +219,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerW
 //
 // 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
 // iteration per increment) — matching `concurrentAppendsPreserveEveryElement`'s pattern above.
-// On `.dispatchQueue`, every compound assignment "parks" a barrier block on the same global
-// concurrent thread pool `concurrentPerform` itself draws workers from; issuing thousands of
-// single-increment iterations there was observed to starve that pool (every worker blocked
-// waiting for another worker to run its parked block, with none free to do so) and hang.
 @Test(arguments: mechanisms) func threadSafeArraySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([0], mechanism: mechanism)
     let workers = 8

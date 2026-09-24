@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeAtomicMutatesUnderLockOrQueue(mechanism: ThreadSafeMechanism) throws {
     @ThreadSafe(mechanism: mechanism) var counter = 0

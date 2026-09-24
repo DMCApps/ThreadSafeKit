@@ -8,7 +8,7 @@ import Testing
 // to get confused with the real, possibly-nil `Value` — this just verifies the wrapped nil itself
 // is handled correctly end to end (init, mutate, read) across every mechanism.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 // MARK: - Plain optional value shape: ThreadSafe<Int?>
 
@@ -32,8 +32,8 @@ func optionalValueMutateToNilAndBackDoesNotCrash(mechanism: ThreadSafeMechanism)
 @Test(arguments: mechanisms)
 func optionalValueConcurrentNilTogglingNeverCrashesOrTraps(mechanism: ThreadSafeMechanism) {
     // Repeatedly flips between nil and a value while readers hammer `wrappedValue`. This is
-    // exactly the shape that would force-unwrap-crash if `read`/`write` ever confused the
-    // internal "populated under .dispatchQueue" sentinel with the value's own nil.
+    // exactly the shape that would force-unwrap-crash if `read`/`write` ever confused an
+    // internal "populated" sentinel with the value's own nil.
     let box = ThreadSafe<Int?>(wrappedValue: nil, mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: 16) { i in
         if i % 2 == 0 {
