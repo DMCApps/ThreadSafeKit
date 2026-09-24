@@ -15,7 +15,9 @@ Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendabl
 
 ## Types
 
-One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.dispatchQueue`): `.lock` (`OSAllocatedUnfairLock`, low-contention short critical sections) or `.dispatchQueue` (concurrent queue + barrier writes — reads run in parallel, writes are exclusive). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking/queueing) rather than by the compiler either way.
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.dispatchQueue`): `.lock` (`OSAllocatedUnfairLock`, low-contention short critical sections, every access fully exclusive), `.dispatchQueue` (concurrent queue + barrier writes — reads run in parallel, writes are exclusive), or `.readerWriterLock` (`pthread_rwlock_t`, locked manually — same concurrent-reads/exclusive-writes semantics as `.dispatchQueue`, without a backing queue). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking/queueing) rather than by the compiler either way.
+
+Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under every mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below. On `.dispatchQueue` specifically, a subscript's in-place modify (`+=`, `?.append`, or plain `ts[i] = v`) costs meaningfully more than a simple call (tens of microseconds, dominated by spawning a dedicated thread — see `beginModify()`'s doc comment in ThreadSafe.swift for why it can't just borrow one from GCD's shared pool). Prefer `.lock` or `.readerWriterLock` for code that does compound subscript edits on a hot path or from the main thread.
 
 `Value`'s shape determines which members are available, added via constrained extensions:
 
@@ -30,11 +32,11 @@ One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mech
 | `RangeReplaceableCollection`* | + `remove(at:)`, `insert(_:at:)`, `insert(contentsOf:at:)`, `removeSubrange(_:)`, `replaceSubrange(_:with:)`, `firstIndex(where:)` |
 | `RangeReplaceableCollection`*, `Element: Equatable` | + `firstIndex(of:)` |
 | `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()`, `removeLast()`/`removeLast(_:)` |
-| `MutableCollection`* | + `subscript(index:)` (get/set) |
+| `MutableCollection`* | + `subscript(index:)` (get + atomic in-place modify) |
 | `MutableCollection & BidirectionalCollection` | + `reverse()` |
 | `MutableCollection & RandomAccessCollection` | + `sort(by:)`, `shuffle()` |
 | `MutableCollection & RandomAccessCollection`, `Element: Comparable` | + `sort()` |
-| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge`, `subscript(key:)`, init with no initial value |
+| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge`, `subscript(key:)` (get + atomic in-place modify), init with no initial value |
 | `Dictionary<Key, Value>` (concrete) | + `mapValues(_:)`, `compactMapValues(_:)`, `filter(_:)` (`-> [Key: Value]`), `contains(where:)` |
 | `SetAlgebra` (e.g. `Set`) | `contains(_:)`, `insert(_:)`, `remove(_:)`, `update(with:)`, `removeAll`, `union(_:)`, `intersection(_:)`, `symmetricDifference(_:)`, `formUnion(_:)`, `formIntersection(_:)`, `subtract(_:)`, `formSymmetricDifference(_:)`, `isSubset(of:)`, `isSuperset(of:)`, `isDisjoint(with:)`, `isStrictSubset(of:)`, `isStrictSuperset(of:)`, init with no initial value |
 
@@ -83,6 +85,10 @@ let all = await list.elements
 ```
 
 `ThreadSafe<Value>` also works as a plain instance (`let list = ThreadSafe<[Int]>()`) when you don't want property-wrapper sugar.
+
+### Subscripts are atomic
+
+`ts[i] += 1`, `dict[k]! += 1`, `dict[k]?.append(x)`, and plain `ts[i] = v`/`dict[k] = v` are each a single atomic access — the write lock is held across the entire get-modify-set, so concurrent compound assignment through a subscript can't lose updates. `ts[i] = ts[i] + 1`, however, is *two* separate accesses (a `get`, then a full `set`), so it is **not** atomic — the two accesses can interleave with another caller's write in between. Use `+=` (or `mutate`, below) for anything that needs to be a single step.
 
 ### Compound operations with `mutate`
 

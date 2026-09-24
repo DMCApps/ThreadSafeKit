@@ -140,9 +140,17 @@ where Value: RangeReplaceableCollection & BidirectionalCollection, Value.Element
 }
 
 extension ThreadSafe where Value: MutableCollection, Value.Element: Sendable, Value.Index: Sendable {
+    /// Atomic for the whole access, including compound forms like `ts[i] += 1` and
+    /// `ts[i]?.append(x)` — the write lock is held across the entire get-modify-set. Note that
+    /// `ts[i] = ts[i] + 1` is two separate accesses (a `get`, then a `_modify`), so it's NOT
+    /// atomic; use `+=` or `mutate` for that.
     public subscript(index: Value.Index) -> Value.Element {
         get { read { $0[index] } }
-        set { write { $0[index] = newValue } }
+        _modify {
+            beginModify()
+            defer { endModify() }
+            yield &storage[index]
+        }
     }
 }
 

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeDictionarySetAndGet(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
@@ -110,6 +110,47 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
         dictionary.setValue(i, forKey: i)
     }
     #expect(dictionary.count == concurrencyIterations)
+}
+
+// `dict["k"]! += 1` holds the write lock across the whole get-modify-set (see the subscript's
+// doc comment in ThreadSafe+Dictionary.swift) — unlike the old get/set-accessor subscript,
+// concurrent compound assignment through it can't lose updates.
+//
+// 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
+// iteration per increment) — see the comment on the array equivalent of this test for why:
+// thousands of single-increment iterations starve the shared global thread pool that both
+// `concurrentPerform` and `.dispatchQueue`'s parked subscript modify draw workers from.
+@Test(arguments: mechanisms) func threadSafeDictionarySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["k": 0], mechanism: mechanism)
+    let workers = 8
+    let perWorker = 250
+    DispatchQueue.concurrentPerform(iterations: workers) { _ in
+        for _ in 0..<perWorker { dictionary["k"]! += 1 }
+    }
+    #expect(dictionary["k"] == workers * perWorker)
+}
+
+// Same atomicity, but for the "keyed collection value" shape (`lists["k"]?.append(i)`) rather
+// than a keyed scalar — the subscript's `_modify` holds the lock across the whole optional-chained
+// mutation just as it does for `!` above.
+@Test(arguments: mechanisms) func threadSafeDictionaryOfArraysSubscriptOptionalAppendIsAtomic(mechanism: ThreadSafeMechanism) throws {
+    let lists = ThreadSafe(["k": [Int]()], mechanism: mechanism)
+    let workers = 8
+    let perWorker = 250
+    DispatchQueue.concurrentPerform(iterations: workers) { w in
+        for j in 0..<perWorker { lists["k"]?.append(w * perWorker + j) }
+    }
+    #expect(lists["k"]?.count == workers * perWorker)
+}
+
+// `lists["missing"]?.append(x)` on a key that was never inserted must be a no-op — the yielded
+// value is `nil`, `Optional.append` never runs, and writing `nil` back through the subscript's
+// setter doesn't insert a "nil" entry (removing an absent key is itself a no-op for `Dictionary`).
+@Test(arguments: mechanisms) func threadSafeDictionaryOfArraysOptionalAppendOnMissingKeyIsNoOp(mechanism: ThreadSafeMechanism) throws {
+    let lists = ThreadSafe<[String: [Int]]>(mechanism: mechanism)
+    lists["missing"]?.append(1)
+    #expect(lists.isEmpty)
+    #expect(lists["missing"] == nil)
 }
 
 // Interleaves reads with writes to exercise the backing mechanism specifically: whether it's the

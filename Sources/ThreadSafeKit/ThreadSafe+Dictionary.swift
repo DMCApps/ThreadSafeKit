@@ -64,9 +64,17 @@ extension ThreadSafe where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, 
         try write { try $0.merge(other, uniquingKeysWith: combine) }
     }
 
+    /// Atomic for the whole access, including `dict[k]! += 1`, `dict[k]?.append(x)`, and plain
+    /// `dict[k] = v`/`dict[k] = nil` (the latter removes the key) — the write lock is held across
+    /// the entire get-modify-set. `dict[k] = dict[k]! + 1` is two separate accesses and is NOT
+    /// atomic; use `+=` or `mutate` for that.
     public subscript(key: Value.Key) -> Value.KeyedValue? {
         get { read { $0[key] } }
-        set { write { $0[key] = newValue } }
+        _modify {
+            beginModify()
+            defer { endModify() }
+            yield &storage[key]
+        }
     }
 }
 

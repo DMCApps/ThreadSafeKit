@@ -3,12 +3,12 @@ import Testing
 @testable import ThreadSafeKit
 
 // Coverage for Value == Optional<T> (both the wrapped value itself being optional, and
-// collections whose element/keyed-value is optional). The internal `storage: Value?` on the
-// `.dispatchQueue` path becomes a double-optional whenever Value is itself Optional — this
-// verifies the outer (internal "is it populated") layer and the inner (the actual wrapped nil)
-// layer never get confused, and that `storage!` never force-unwrap-crashes when the real value is nil.
+// collections whose element/keyed-value is optional). `storage: Value` is a plain, non-optional
+// stored property (see ThreadSafe.swift), so there's no separate "is it populated" wrapper layer
+// to get confused with the real, possibly-nil `Value` — this just verifies the wrapped nil itself
+// is handled correctly end to end (init, mutate, read) across every mechanism.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
 
 // MARK: - Plain optional value shape: ThreadSafe<Int?>
 

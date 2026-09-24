@@ -9,7 +9,7 @@ import Testing
 // such thing as a free lock), so these tests assert the added cost stays a small, bounded
 // multiple of the raw operation instead.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
 
 // MARK: - Array shape
 

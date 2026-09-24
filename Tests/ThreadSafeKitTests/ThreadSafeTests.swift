@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeArrayShapeAppendPushPop(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
