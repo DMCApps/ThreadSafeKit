@@ -199,9 +199,9 @@ import Testing
     #expect(await array[safe: 3] == nil)
 }
 
-@Test func arrayActorMutateSetsElement() async throws {
+@Test func arrayActorSetElement() async throws {
     let array = ThreadSafeArray([1, 2, 3])
-    await array.mutate { $0[1] = 20 }
+    await array.setElement(20, at: 1)
     #expect(await array.elements == [1, 20, 3])
 }
 

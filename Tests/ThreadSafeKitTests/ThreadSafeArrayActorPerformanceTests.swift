@@ -26,7 +26,7 @@ func arrayActorWritesAreFast() async {
     await assertFast("append(contentsOf:)") { await array.append(contentsOf: [0]) }
     await assertFast("insert(_:at:)") { await array.insert(0, at: 0) }
     await assertFast("popLast") { _ = await array.popLast() }
-    await assertFast("mutate set element") { await array.mutate { $0[0] = 0 } }
+    await assertFast("setElement(_:at:)") { await array.setElement(0, at: 0) }
     await assertFast("removeFirst") { await array.append(0); _ = await array.removeFirst() }
     await assertFast("removeLast") { await array.append(0); _ = await array.removeLast() }
     await assertFast("reserveCapacity") { await array.reserveCapacity(10) }
