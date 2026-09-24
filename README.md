@@ -1,6 +1,6 @@
 # ThreadSafeKit
 
-Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendable`, so mutable state pass across isolation domains without data races, no manual locking at call site.
+Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendable`, so mutable state passes across isolation domains without data races, no manual locking at call site.
 
 ## Requirements
 
@@ -15,57 +15,64 @@ Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendabl
 
 ## Types
 
-Three storage kinds (single value, array, dictionary), each with two backends:
+One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.dispatchQueue`): `.lock` (`OSAllocatedUnfairLock`, low-contention short critical sections) or `.dispatchQueue` (concurrent queue + barrier writes — reads run in parallel, writes are exclusive). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking/queueing) rather than by the compiler either way.
 
-| Kind | Actor (async) | Lock/queue (sync) |
+`Value`'s shape determines which members are available, added via constrained extensions:
+
+| `Value` shape | Members |
+|---|---|
+| Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
+| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
+| `BidirectionalCollection` | + `first`, `last` |
+| `RangeReplaceableCollection` | + `elements`, `append`, `push`, `removeAll`, `remove(at:)`*, init with no initial value, init from any `Sequence` |
+| `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()` |
+| `MutableCollection` | + `subscript(index:)`* (get/set) |
+| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `removeAll`, `merge`, `subscript(key:)`, init with no initial value |
+
+\* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
+
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` and `ThreadSafe<Set<Int>>` both get `Collection` members (e.g. `ThreadSafe("hello").count == 5`).
+
+Alongside `ThreadSafe<Value>`, three real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, and `ThreadSafeAtomic<Value>`:
+
+| Kind | `ThreadSafe` (sync) | Actor (async) |
 |---|---|---|
-| Single value | `AtomicActor<Value>` | `ThreadSafeAtomic<Value>` (property wrapper) |
-| Array | `ArrayActor<Element>` | `ThreadSafeArray<Element>` (also usable as a property wrapper) |
-| Dictionary | `DictionaryActor<Key, Value>` | `ThreadSafeDictionary<Key, Value>` (also usable as a property wrapper) |
+| Single value | `ThreadSafe<Value>` (property wrapper) | `ThreadSafeAtomic<Value>` |
+| Array | `ThreadSafe<[Element]>` (also usable as a property wrapper) | `ThreadSafeArray<Element>` |
+| Dictionary | `ThreadSafe<[Key: Value]>` (also usable as a property wrapper) | `ThreadSafeDictionary<Key, Value>` |
 
-**Actor types** — `AtomicActor`, `ArrayActor`, `DictionaryActor`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction.
+**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/atomic names belong exclusively to the actors.
 
-**Sync types** — `ThreadSafeAtomic`/`ThreadSafeArray`/`ThreadSafeDictionary`: no `await` needed, useful where sync access is required (e.g. a property wrapper on a non-async type). Each takes a `mechanism: ThreadSafeMechanism` parameter (default `.dispatchQueue`) picking the backing: `.lock` (`OSAllocatedUnfairLock`, real/checked `Sendable`) or `.dispatchQueue` (serial queue for `ThreadSafeAtomic`, concurrent queue + barrier writes for `ThreadSafeArray`/`ThreadSafeDictionary`; `@unchecked Sendable` — safety enforced internally, not by the compiler). Actor types don't take a mechanism — actor isolation always requires `await`, so there's no sync/mechanism choice to make.
+When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a `.dispatchQueue`-backed instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
 
-When the wrapped `Value`/`Element`/`Key`+`Value` is `Codable`, so is the sync wrapper itself (`ThreadSafeAtomic`, `ThreadSafeArray`, `ThreadSafeDictionary`), regardless of mechanism. Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `get()`/`elements`/`dictionary` and restore via `init(_:)`/compare or hash the plain value at the call site instead.
+`ThreadSafe<Value>` is deliberately **not** `Hashable`, even when `Value` is: hashing/equality-for-Set-membership requires a member's hash to never change while it's a member (`Set` never re-buckets an existing element), which a reference type with mutable contents can't promise — mutating a `ThreadSafe` after inserting it into a `Set` or using it as a `Dictionary` key corrupts the table. Deduplicate/hash by content instead: `Set(instances.map(\.wrappedValue))`.
 
-Sync types also conform to `CustomStringConvertible` unconditionally — `description` prints the wrapper name plus its current contents (e.g. `ThreadSafeAtomic(42)`, `ThreadSafeArray([1, 2, 3])`), useful in `print`/`po`. Actor types don't get this either, for the same synchronous-access reason.
+`ThreadSafe<Value>` conforms to `CustomStringConvertible` unconditionally — `description` prints `ThreadSafe(<contents>)` (e.g. `ThreadSafe(42)`, `ThreadSafe([1, 2, 3])`), the same generic form regardless of shape. Actor types don't get this either, for the same synchronous-access reason.
 
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`setValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
-
-### When to use which
-
-| Type | Backend | Use when |
-|---|---|---|
-| `ThreadSafeAtomic<Value>` | `.lock` (unfair lock) or `.dispatchQueue` (serial queue, default), property wrapper | Sync single-value state (counters, flags, config snapshots); pick `.lock` for low-contention short critical sections, `.dispatchQueue` for queue semantics (FIFO ordering, QoS control). |
-| `AtomicActor<Value>` | actor | Single-value state owned by async code; callers already `await`. |
-| `ThreadSafeArray<Element>` | `.lock` (unfair lock) or `.dispatchQueue` (concurrent + barrier, default) | Sync array access from non-async code; pick `.lock` for low-contention short critical sections, `.dispatchQueue` for many concurrent reads with occasional writes. |
-| `ArrayActor<Element>` | actor | Array state owned by async code. |
-| `ThreadSafeDictionary<Key, Value>` | `.lock` (unfair lock) or `.dispatchQueue` (concurrent + barrier, default) | Sync dictionary/cache access from non-async code; pick `.lock` for low-contention short critical sections, `.dispatchQueue` for many concurrent reads with occasional writes. |
-| `DictionaryActor<Key, Value>` | actor | Dictionary/cache state owned by async code. |
 
 ## Usage
 
 ```swift
-@ThreadSafeAtomic var counter = 0
+@ThreadSafe var counter = 0
 _counter.mutate { $0 += 1 }
 
-@ThreadSafeArray var items = [1, 2, 3]
+@ThreadSafe var items = [1, 2, 3]
 $items.append(4)   // items == [1, 2, 3, 4]
 
-@ThreadSafeDictionary(mechanism: .lock) var cache = ["key": 1]
+@ThreadSafe(mechanism: .lock) var cache = ["key": 1]
 $cache.setValue(2, forKey: "other")   // cache == ["key": 1, "other": 2]
 
-let list = ArrayActor<Int>()
+let list = ThreadSafeArray<Int>()
 await list.append(1)
 let all = await list.elements
 ```
 
-Pick actor types when the caller is already async; pick lock/queue types when it isn't. `ThreadSafeArray`/`ThreadSafeDictionary` also work as plain instances (`let list = ThreadSafeArray<Int>()`) when you don't want property-wrapper sugar.
+`ThreadSafe<Value>` also works as a plain instance (`let list = ThreadSafe<[Int]>()`) when you don't want property-wrapper sugar.
 
 ### Compound operations with `mutate`
 
-Every type's individual calls (`append`, `setValue`, subscripts, …) are atomic on their own, but two separate calls are not atomic *together* — a read followed by a write can race with another caller's write in between:
+Every individual call (`append`, `setValue`, subscripts, …) is atomic on its own, but two separate calls are not atomic *together* — a read followed by a write can race with another caller's write in between:
 
 ```swift
 // NOT safe: another writer can slip in between these two calls
@@ -74,7 +81,7 @@ if await dict.getValue(forKey: "x") == nil {
 }
 ```
 
-`mutate(_:)` holds the lock/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
+`mutate(_:)` holds the lock/queue/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
 
 ```swift
 await dict.mutate { storage in
@@ -87,44 +94,46 @@ await list.mutate { elements in
     elements.append(elements.count)   // check-then-act, race-free
 }
 
-counter.mutate { $0 += 1 }   // ThreadSafeAtomic already worked this way, regardless of mechanism
+let counter = ThreadSafe(wrappedValue: 0)
+counter.mutate { $0 += 1 }   // ThreadSafe already works this way, regardless of mechanism
 ```
 
-**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
+**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
-### Codable, Equatable, and Hashable
+### Codable and Equatable
 
-Sync types conform conditionally — only when the wrapped type does — regardless of `mechanism`:
+`ThreadSafe<Value>` conforms conditionally — only when `Value` does — regardless of `mechanism`:
 
 ```swift
-let counter = ThreadSafeAtomic(wrappedValue: 42)
+let counter = ThreadSafe(wrappedValue: 42)
 let data = try JSONEncoder().encode(counter)
-let decoded = try JSONDecoder().decode(ThreadSafeAtomic<Int>.self, from: data)
+let decoded = try JSONDecoder().decode(ThreadSafe<Int>.self, from: data)
 
-let cache = ThreadSafeDictionary(["a": 1])
-cache == ThreadSafeDictionary(["a": 1])   // true
+let cache = ThreadSafe(["a": 1])
+cache == ThreadSafe(["a": 1])   // true
 
-let seen: Set<ThreadSafeArray<Int>> = [ThreadSafeArray([1, 2]), ThreadSafeArray([1, 2])]   // one element
-
-struct Container: Codable, Equatable, Hashable {
-    let items: ThreadSafeArray<Int>   // synthesis works because ThreadSafeArray<Int> is itself Codable/Equatable/Hashable
+struct Container: Codable, Equatable {
+    let items: ThreadSafe<[Int]>   // synthesis works because ThreadSafe<[Int]> is itself Codable/Equatable
 }
 ```
 
-`ThreadSafeDictionary`'s `Hashable` combines each key/value pair's hash order-independently (XOR), since `Dictionary` itself has no `Hashable` conformance to delegate to.
+Not `Hashable` — see above: a member's hash must never change while it's in a `Set`/used as a
+`Dictionary` key, which a mutable reference type can't promise. `Container` above can't add
+`Hashable` to its own conformance list either, for the same reason (its `items` field is still a
+mutable reference under the hood, `let` only stops reassignment, not mutation through it).
 
-Actor types (`AtomicActor`, `ArrayActor`, `DictionaryActor`) don't conform to any of these — `Encodable.encode(to:)`, `==`, and `hash(into:)` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
+Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
 
 ```swift
 let snapshot = await list.elements
 let data = try JSONEncoder().encode(snapshot)
 // ...
-let restored = ArrayActor(try JSONDecoder().decode([Int].self, from: data))
+let restored = ThreadSafeArray(try JSONDecoder().decode([Int].self, from: data))
 
 await list.elements == (await otherList.elements)   // compare the plain snapshots
 ```
 
-This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `AtomicActor<Value>`/`ArrayActor<Element>`/`DictionaryActor<Key, Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
+This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `ThreadSafeArray<Element>`/`ThreadSafeDictionary<Key, Value>`/`ThreadSafeAtomic<Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
 
 ## Testing
 

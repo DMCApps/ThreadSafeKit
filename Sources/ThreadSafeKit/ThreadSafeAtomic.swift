@@ -1,87 +1,28 @@
-import Foundation
-import os
+/// Actor-backed single-value wrapper. Access requires `await`, matching ``ThreadSafeArray``/``ThreadSafeDictionary``.
+///
+/// Deliberately not `Codable`: `Encodable.encode(to:)` is synchronous, but reading
+/// isolated actor state requires `await`, so no `encode(to:)` can call ``get()``.
+/// `init(from:)` could be implemented (actor initializers aren't async), but doing so
+/// alone would give asymmetric, surprising conformance, so it's left out too.
+/// To (de)serialize, snapshot/restore manually at the call site: encode `await get()`,
+/// decode into `ThreadSafeAtomic(_:)`.
+public actor ThreadSafeAtomic<Value: Sendable> {
+    private var value: Value
 
-/// Lock/queue-backed alternative to ``AtomicActor``. Pick the backing mechanism via ``ThreadSafeMechanism``;
-/// defaults to a serial `DispatchQueue`.
-@propertyWrapper
-public final class ThreadSafeAtomic<Value: Sendable>: @unchecked Sendable {
-    private enum Backing {
-        case lock(OSAllocatedUnfairLock<Value>)
-        case queue(DispatchQueue)
+    public init(_ value: Value) {
+        self.value = value
     }
 
-    private let backing: Backing
-    // Only used by the `.queue` mechanism — the `.lock` mechanism keeps its state inside the
-    // `OSAllocatedUnfairLock` instead, and only ever touches this through `wrappedValue`/`mutate`.
-    private var storage: Value
-
-    public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .dispatchQueue) {
-        switch mechanism {
-        case .lock:
-            backing = .lock(OSAllocatedUnfairLock(initialState: wrappedValue))
-            storage = wrappedValue
-        case .dispatchQueue:
-            backing = .queue(DispatchQueue(label: "com.threadsafekit.atomic"))
-            storage = wrappedValue
-        }
+    public func get() -> Value {
+        value
     }
 
-    public var wrappedValue: Value {
-        get {
-            switch backing {
-            case .lock(let lock):
-                return lock.withLock { $0 }
-            case .queue(let queue):
-                return queue.sync { storage }
-            }
-        }
-        @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
-        set {
-            switch backing {
-            case .lock(let lock):
-                lock.withLock { $0 = newValue }
-            case .queue(let queue):
-                queue.sync { storage = newValue }
-            }
-        }
+    @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use mutate(_:) instead")
+    public func set(_ newValue: Value) {
+        value = newValue
     }
 
-    public func mutate(_ mutation: @Sendable (inout Value) -> Void) {
-        switch backing {
-        case .lock(let lock):
-            lock.withLock(mutation)
-        case .queue(let queue):
-            queue.sync { mutation(&storage) }
-        }
-    }
-}
-
-extension ThreadSafeAtomic: CustomStringConvertible {
-    public var description: String {
-        "ThreadSafeAtomic(\(wrappedValue))"
-    }
-}
-
-extension ThreadSafeAtomic: Equatable where Value: Equatable {
-    public static func == (lhs: ThreadSafeAtomic, rhs: ThreadSafeAtomic) -> Bool {
-        lhs.wrappedValue == rhs.wrappedValue
-    }
-}
-
-extension ThreadSafeAtomic: Hashable where Value: Hashable {
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(wrappedValue)
-    }
-}
-
-extension ThreadSafeAtomic: Codable where Value: Codable {
-    public convenience init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        self.init(wrappedValue: try container.decode(Value.self))
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        try container.encode(wrappedValue)
+    public func mutate(_ mutation: (inout Value) -> Void) {
+        mutation(&value)
     }
 }

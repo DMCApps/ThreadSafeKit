@@ -1,0 +1,33 @@
+import Testing
+
+@testable import ThreadSafeKit
+
+// Performance coverage for `ThreadSafeDictionary`: every public member stays within a generous
+// absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
+
+@Test
+func dictionaryActorReadsAreFast() async {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    await assertFast("count") { _ = await dictionary.count }
+    await assertFast("isEmpty") { _ = await dictionary.isEmpty }
+    await assertFast("dictionary") { _ = await dictionary.dictionary }
+    await assertFast("getValue(forKey:)") { _ = await dictionary.getValue(forKey: "a") }
+    await assertFast("subscript(key:) get") { _ = await dictionary["a"] }
+    await assertFast("forEach") { await dictionary.forEach { _ = $0 } }
+    await assertFast("reduce") { _ = await dictionary.reduce(into: 0) { $0 += $1.value } }
+}
+
+@Test
+func dictionaryActorWritesAreFast() async {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    await assertFast("setValue(_:forKey:)") { await dictionary.setValue(1, forKey: "z") }
+    await assertFast("removeValue(forKey:)") { _ = await dictionary.removeValue(forKey: "does-not-exist") }
+    await assertFast("merge") { await dictionary.merge(["y": 1]) { old, _ in old } }
+    await assertFast("mutate") { await dictionary.mutate { $0["z"] = 1 } }
+}
+
+@Test
+func dictionaryActorRemoveAllIsFast() async {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    await assertFast("removeAll") { await dictionary.removeAll() }
+}
