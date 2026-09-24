@@ -21,6 +21,76 @@ extension ThreadSafe where Value: Collection, Value.Element: Sendable {
     ) rethrows -> Result {
         try read { try $0.reduce(into: initial, updateAccumulatingResult) }
     }
+
+    @inlinable
+    public func reduce<Result: Sendable>(
+        _ initialResult: Result,
+        _ nextPartialResult: @Sendable (Result, Value.Element) throws -> Result
+    ) rethrows -> Result {
+        try read { try $0.reduce(initialResult, nextPartialResult) }
+    }
+
+    @inlinable
+    public func first(where predicate: @Sendable (Value.Element) throws -> Bool) rethrows -> Value.Element? {
+        try read { try $0.first(where: predicate) }
+    }
+
+    @inlinable
+    public func contains(where predicate: @Sendable (Value.Element) throws -> Bool) rethrows -> Bool {
+        try read { try $0.contains(where: predicate) }
+    }
+
+    @inlinable
+    public func count(where predicate: @Sendable (Value.Element) throws -> Bool) rethrows -> Int {
+        try read { try $0.count(where: predicate) }
+    }
+
+    @inlinable
+    public func min(by areInIncreasingOrder: @Sendable (Value.Element, Value.Element) throws -> Bool) rethrows -> Value.Element? {
+        try read { try $0.min(by: areInIncreasingOrder) }
+    }
+
+    @inlinable
+    public func max(by areInIncreasingOrder: @Sendable (Value.Element, Value.Element) throws -> Bool) rethrows -> Value.Element? {
+        try read { try $0.max(by: areInIncreasingOrder) }
+    }
+
+    @inlinable
+    public func randomElement() -> Value.Element? {
+        read { $0.randomElement() }
+    }
+
+    @inlinable
+    public func compactMap<T: Sendable>(_ transform: @Sendable (Value.Element) throws -> T?) rethrows -> [T] {
+        try read { try $0.compactMap(transform) }
+    }
+
+    @inlinable
+    public func sorted(by areInIncreasingOrder: @Sendable (Value.Element, Value.Element) throws -> Bool) rethrows -> [Value.Element] {
+        try read { try $0.sorted(by: areInIncreasingOrder) }
+    }
+
+    @inlinable
+    public func allSatisfy(_ predicate: @Sendable (Value.Element) throws -> Bool) rethrows -> Bool {
+        try read { try $0.allSatisfy(predicate) }
+    }
+}
+
+extension ThreadSafe where Value: Collection, Value.Element: Sendable & Comparable {
+    @inlinable
+    public func sorted() -> [Value.Element] {
+        read { $0.sorted() }
+    }
+
+    @inlinable
+    public func min() -> Value.Element? {
+        read { $0.min() }
+    }
+
+    @inlinable
+    public func max() -> Value.Element? {
+        read { $0.max() }
+    }
 }
 
 extension ThreadSafe where Value: Collection, Value.Element: Sendable, Value.Index: Sendable {

@@ -160,3 +160,159 @@ import Testing
     }
     #expect(await dictionary["counter"] == concurrencyIterations)
 }
+
+@Test func dictionaryActorSubscriptDefault() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1])
+    #expect(await dictionary["a", default: 0] == 1)
+    #expect(await dictionary["missing", default: 0] == 0)
+}
+
+// `subscript(key:default:)` is get-only on the actor (see its doc comment); atomic default-and-
+// update goes through `mutate` instead — many concurrent increments there must still sum exactly.
+@Test func dictionaryActorSubscriptDefaultViaMutateIsAtomic() async throws {
+    let dictionary = ThreadSafeDictionary<String, Int>()
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<concurrencyIterations {
+            group.addTask {
+                await dictionary.mutate { $0["counter", default: 0] += 1 }
+            }
+        }
+    }
+    #expect(await dictionary["counter"] == concurrencyIterations)
+}
+
+@Test func dictionaryActorPopFirst() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1])
+    let popped = await dictionary.popFirst()
+    #expect(popped?.key == "a")
+    #expect(popped?.value == 1)
+    #expect(await dictionary.isEmpty)
+
+    let empty = ThreadSafeDictionary<String, Int>()
+    #expect(await empty.popFirst() == nil)
+}
+
+// Concurrent drains must remove every entry exactly once — no duplicates, no drops.
+@Test func dictionaryActorConcurrentPopFirstDrainsExactlyOnce() async throws {
+    let n = 2_000
+    let dictionary = ThreadSafeDictionary(Dictionary(uniqueKeysWithValues: (0..<n).map { ($0, $0 * 2) }))
+    let popped = ThreadSafeArray<Int>()
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<8 {
+            group.addTask {
+                while let (key, value) = await dictionary.popFirst() {
+                    #expect(value == key * 2)
+                    await popped.append(key)
+                }
+            }
+        }
+    }
+    #expect(await dictionary.isEmpty)
+    let drained = await popped.elements
+    #expect(drained.count == n)
+    #expect(Set(drained) == Set(0..<n))
+}
+
+@Test func dictionaryActorReserveCapacity() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    await dictionary.reserveCapacity(100)
+    #expect(await dictionary.dictionary == ["a": 1, "b": 2])
+}
+
+// Concurrent `reserveCapacity` calls interleaved with concurrent writes must not corrupt or
+// drop any write — `reserveCapacity` only affects unobservable storage capacity.
+@Test func dictionaryActorConcurrentReserveCapacityDoesNotCorruptConcurrentWrites() async throws {
+    let dictionary = ThreadSafeDictionary<Int, Int>()
+    let n = concurrencyIterations
+    await withTaskGroup(of: Void.self) { group in
+        for i in 0..<n {
+            group.addTask { await dictionary.updateValue(i, forKey: i) }
+        }
+        for _ in 0..<n {
+            group.addTask { await dictionary.reserveCapacity(1_000) }
+        }
+    }
+    #expect(await dictionary.count == n)
+    let snapshot = await dictionary.dictionary
+    #expect(snapshot.allSatisfy { $0.value == $0.key })
+}
+
+@Test func dictionaryActorMergeSequenceOfPairs() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1])
+    await dictionary.merge([("a", 2), ("b", 3)]) { _, new in new }
+    #expect(await dictionary.dictionary == ["a": 2, "b": 3])
+}
+
+// Each task merges a disjoint key range, so no `uniquingKeysWith` collision is ever exercised
+// concurrently — this is purely a lost-write check for the sequence-of-pairs overload.
+@Test func dictionaryActorConcurrentMergeSequenceOfPairsPreservesEveryEntry() async throws {
+    let dictionary = ThreadSafeDictionary<Int, Int>()
+    let writers = 8
+    let perWriter = 250
+    await withTaskGroup(of: Void.self) { group in
+        for w in 0..<writers {
+            group.addTask {
+                let pairs = (0..<perWriter).map { (w * perWriter + $0, w) }
+                await dictionary.merge(pairs) { _, new in new }
+            }
+        }
+    }
+    #expect(await dictionary.count == writers * perWriter)
+}
+
+@Test func dictionaryActorFirstWhere() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await dictionary.first(where: { $0.value == 2 })?.key == "b")
+    #expect(await dictionary.first(where: { $0.value == 3 }) == nil)
+}
+
+@Test func dictionaryActorCountWhere() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2, "c": 3])
+    #expect(await dictionary.count(where: { $0.value > 1 }) == 2)
+}
+
+@Test func dictionaryActorMinByAndMaxBy() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 3, "b": 1, "c": 2])
+    #expect(await dictionary.min(by: { $0.value < $1.value })?.key == "b")
+    #expect(await dictionary.max(by: { $0.value < $1.value })?.key == "a")
+}
+
+@Test func dictionaryActorReduceNonInto() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    let sum = await dictionary.reduce(0) { $0 + $1.value }
+    #expect(sum == 3)
+}
+
+@Test func dictionaryActorRandomElement() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    let element = await dictionary.randomElement()
+    #expect(element != nil)
+    #expect(["a", "b"].contains(element!.key))
+
+    let empty = ThreadSafeDictionary<String, Int>()
+    #expect(await empty.randomElement() == nil)
+}
+
+@Test func dictionaryActorAllSatisfy() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 2, "b": 4])
+    #expect(await dictionary.allSatisfy { $0.value % 2 == 0 })
+    #expect(await dictionary.allSatisfy { $0.value > 2 } == false)
+}
+
+@Test func dictionaryActorCompactMap() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    let values = await dictionary.compactMap { $0.value == 1 ? nil : $0.value }
+    #expect(values == [2])
+}
+
+@Test func dictionaryActorSortedBy() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 3, "b": 1, "c": 2])
+    let sorted = await dictionary.sorted(by: { $0.value < $1.value })
+    #expect(sorted.map(\.key) == ["b", "c", "a"])
+}
+
+@Test func dictionaryActorMap() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    let doubled = await dictionary.map { $0.value * 2 }
+    #expect(Set(doubled) == [2, 4])
+}

@@ -173,27 +173,28 @@ A concurrent `DispatchQueue` with barrier writes is the classic reader-writer pa
 | `Value` shape | Members |
 |---|---|
 | Any `Sendable` | `wrappedValue`, `projectedValue`, `mutate(_:)`, plus unconditional `description` |
-| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `subscript(safe:)`* |
+| `Collection` | `count`, `isEmpty`, `forEach`, `map`, `reduce(into:)`, `reduce(_:_:)`, `first(where:)`, `contains(where:)`, `count(where:)`, `min(by:)`, `max(by:)`, `randomElement()`, `allSatisfy(_:)`, `compactMap(_:)`, `sorted(by:)`, `subscript(safe:)`* |
+| `Collection`, `Element: Comparable` | + `sorted()`, `min()`, `max()` |
 | `BidirectionalCollection` | + `first`, `last` |
-| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `removeAll`, `removeAll(where:)`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `compactMap(_:)`, `sorted(by:)`, `allSatisfy(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
+| `RangeReplaceableCollection` | + `elements`, `append`, `append(contentsOf:)`, `removeAll`, `removeAll(where:)`, `removeFirst()`/`removeFirst(_:)`, `reserveCapacity(_:)`, `filter(_:)`, `prefix(_:)`/`suffix(_:)` (returning `[Element]`), init with no initial value, init from any `Sequence` |
 | `RangeReplaceableCollection`, `Element: Equatable` | + `contains(_:)` |
-| `RangeReplaceableCollection`, `Element: Comparable` | + `sorted()`, `min()`, `max()` |
 | `RangeReplaceableCollection`* | + `remove(at:)`, `insert(_:at:)`, `insert(contentsOf:at:)`, `removeSubrange(_:)`, `replaceSubrange(_:with:)`, `firstIndex(where:)` |
 | `RangeReplaceableCollection`*, `Element: Equatable` | + `firstIndex(of:)` |
 | `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `popLast()`, `removeLast()`/`removeLast(_:)` |
-| `MutableCollection`* | + `subscript(index:)` (get + atomic in-place modify) |
+| `MutableCollection`* | + `subscript(index:)` (get + atomic in-place modify), `swapAt(_:_:)` |
 | `MutableCollection & BidirectionalCollection` | + `reverse()` |
 | `MutableCollection & RandomAccessCollection` | + `sort(by:)`, `shuffle()` |
 | `MutableCollection & RandomAccessCollection`, `Element: Comparable` | + `sort()` |
-| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge`, `subscript(key:)` (get + atomic in-place modify), init with no initial value |
-| `Dictionary<Key, Value>` (concrete) | + `mapValues(_:)`, `compactMapValues(_:)`, `filter(_:)` (`-> [Key: Value]`), `contains(where:)` |
-| `SetAlgebra` (e.g. `Set`) | `elements`, `contains(_:)`, `insert(_:)`, `remove(_:)`, `update(with:)`, `removeAll`, `union(_:)`, `intersection(_:)`, `symmetricDifference(_:)`, `formUnion(_:)`, `formIntersection(_:)`, `subtract(_:)`, `formSymmetricDifference(_:)`, `isSubset(of:)`, `isSuperset(of:)`, `isDisjoint(with:)`, `isStrictSubset(of:)`, `isStrictSuperset(of:)`, init with no initial value |
+| Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `keys`, `values`, `removeValue(forKey:)`, `updateValue(_:forKey:)`, `removeAll`, `merge(_:uniquingKeysWith:)` (whole-dictionary), `subscript(key:)` (get + atomic in-place modify), init with no initial value |
+| `Dictionary<Key, Value>` (concrete) | + `mapValues(_:)`, `compactMapValues(_:)`, `filter(_:)` (`-> [Key: Value]`), `reserveCapacity(_:)`, `popFirst()`, `merge(_:uniquingKeysWith:)` (sequence-of-pairs), `subscript(key:default:)` (get + atomic in-place modify) |
+| `SetAlgebra` (e.g. `Set`) | `elements`, `contains(_:)`, `insert(_:)`, `remove(_:)`, `update(with:)`, `removeAll()`, `union(_:)`, `intersection(_:)`, `symmetricDifference(_:)`, `subtracting(_:)`, `formUnion(_:)`, `formIntersection(_:)`, `subtract(_:)`, `formSymmetricDifference(_:)`, `isSubset(of:)`, `isSuperset(of:)`, `isDisjoint(with:)`, `isStrictSubset(of:)`, `isStrictSuperset(of:)`, init with no initial value |
+| `Set<Element>` (concrete) | + `popFirst()`, `removeFirst()`, `filter(_:)` (`-> Set<Element>`), `reserveCapacity(_:)`, `removeAll(keepingCapacity:)` |
 
 \* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
 
-`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped rows. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`first(where:)`/`contains(where:)`/etc., but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped rows. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` and `Set<Element>` rows. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
 
-`RangeReplaceableCollection` and `SetAlgebra` cover their full stdlib surface for `Array`/`Set`-shaped values — 1:1 mirrors of the underlying type's own API, so using `ThreadSafe<[Element]>`/`ThreadSafe<Set<Element>>` feels like using `Array`/`Set` directly. `contains(_:)` (Array shape) is scoped to `RangeReplaceableCollection`, not the general `Collection` row, since `Set` already has its own `SetAlgebra`-based `contains(_:)`. For anything genuinely missing, drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
+`RangeReplaceableCollection` and `SetAlgebra` cover their full stdlib surface for `Array`/`Set`-shaped values — 1:1 mirrors of the underlying type's own API, so using `ThreadSafe<[Element]>`/`ThreadSafe<Set<Element>>` feels like using `Array`/`Set` directly. `contains(_:)` (Array shape) is scoped to `RangeReplaceableCollection`, not the general `Collection` row, since `Set` already has its own `SetAlgebra`-based `contains(_:)`. Members the stdlib declares only on the concrete `Dictionary`/`Set` type (not on the protocols behind the generic rows) are in the concrete rows. For anything genuinely missing, drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
 
 Alongside `ThreadSafe<Value>`, four real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, `ThreadSafeSet<Element>`, and `ThreadSafeAtomic<Value>`:
 

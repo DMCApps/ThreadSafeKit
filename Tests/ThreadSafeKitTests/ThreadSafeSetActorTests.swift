@@ -154,3 +154,191 @@ import Testing
     #expect(sum == 6)
     #expect(await set.elements == [1, 2, 3, 6])
 }
+
+@Test func setActorSubtracting() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    #expect(await set.subtracting([2, 3]) == [1])
+    #expect(await set.elements == [1, 2, 3])
+}
+
+@Test func setActorPopFirst() async throws {
+    let set = ThreadSafeSet([1])
+    #expect(await set.popFirst() == 1)
+    #expect(await set.isEmpty)
+
+    let empty = ThreadSafeSet<Int>()
+    #expect(await empty.popFirst() == nil)
+}
+
+// Concurrent drains must remove every element exactly once — no duplicates, no drops.
+@Test func setActorConcurrentPopFirstDrainsExactlyOnce() async throws {
+    let n = 2_000
+    let set = ThreadSafeSet(0..<n)
+    let popped = ThreadSafeArray<Int>()
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<8 {
+            group.addTask {
+                while let value = await set.popFirst() {
+                    await popped.append(value)
+                }
+            }
+        }
+    }
+    #expect(await set.isEmpty)
+    let drained = await popped.elements
+    #expect(drained.count == n)
+    #expect(Set(drained) == Set(0..<n))
+}
+
+@Test func setActorRemoveFirst() async throws {
+    let set = ThreadSafeSet([1])
+    #expect(await set.removeFirst() == 1)
+    #expect(await set.isEmpty)
+}
+
+// `removeFirst()` traps on an empty set, so this drains safely by calling it exactly once per
+// seeded element (one task per element) rather than looping each task to empty.
+@Test func setActorConcurrentRemoveFirstDrainsExactlyOnce() async throws {
+    let n = 2_000
+    let set = ThreadSafeSet(0..<n)
+    let removed = ThreadSafeArray<Int>()
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<n {
+            group.addTask {
+                let value = await set.removeFirst()
+                await removed.append(value)
+            }
+        }
+    }
+    #expect(await set.isEmpty)
+    let drained = await removed.elements
+    #expect(drained.count == n)
+    #expect(Set(drained) == Set(0..<n))
+}
+
+@Test func setActorReserveCapacity() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    await set.reserveCapacity(100)
+    #expect(await set.elements == [1, 2, 3])
+}
+
+// Concurrent `reserveCapacity` calls interleaved with concurrent inserts must not corrupt or
+// drop any insert — `reserveCapacity` only affects unobservable storage capacity.
+@Test func setActorConcurrentReserveCapacityDoesNotCorruptConcurrentInserts() async throws {
+    let set = ThreadSafeSet<Int>()
+    let n = concurrencyIterations
+    await withTaskGroup(of: Void.self) { group in
+        for i in 0..<n {
+            group.addTask { await set.insert(i) }
+        }
+        for _ in 0..<n {
+            group.addTask { await set.reserveCapacity(1_000) }
+        }
+    }
+    #expect(await set.count == n)
+    #expect(await set.elements == Set(0..<n))
+}
+
+@Test func setActorRemoveAllKeepingCapacity() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    await set.removeAll(keepingCapacity: true)
+    #expect(await set.isEmpty)
+}
+
+// Every `removeAll(keepingCapacity:)` call unconditionally empties the set, so whichever call is
+// the LAST one in actor-serialized execution order leaves the set empty at that instant; only
+// inserts after that point can leave anything behind, and inserted values are always >= n — so no
+// original seed value can ever survive, deterministically, regardless of task interleaving.
+@Test func setActorRemoveAllKeepingCapacityConcurrentWithInsertsNeverLeavesSeedValues() async throws {
+    let n = 600
+    let k = 4
+    let set = ThreadSafeSet(0..<n)
+    await withTaskGroup(of: Void.self) { group in
+        for _ in 0..<k {
+            group.addTask {
+                for _ in 0..<100 { await set.removeAll(keepingCapacity: true) }
+            }
+        }
+        for w in 0..<k {
+            group.addTask {
+                for j in 0..<100 { await set.insert(n + w * 100 + j) }
+            }
+        }
+    }
+    let remaining = await set.elements
+    #expect(remaining.isDisjoint(with: Set(0..<n)))
+    #expect(remaining.isSubset(of: Set(n..<(n + k * 100))))
+}
+
+@Test func setActorFilterReturnsSet() async throws {
+    let set = ThreadSafeSet([1, 2, 3, 4])
+    let evens: Set<Int> = await set.filter { $0 % 2 == 0 }
+    #expect(evens == [2, 4])
+}
+
+@Test func setActorFirstWhere() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    #expect(await set.first(where: { $0 == 2 }) == 2)
+    #expect(await set.first(where: { $0 == 4 }) == nil)
+}
+
+@Test func setActorContainsWhere() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    #expect(await set.contains(where: { $0 == 2 }) == true)
+    #expect(await set.contains(where: { $0 == 4 }) == false)
+}
+
+@Test func setActorCountWhere() async throws {
+    let set = ThreadSafeSet([1, 2, 3, 4])
+    #expect(await set.count(where: { $0 % 2 == 0 }) == 2)
+}
+
+@Test func setActorMinByAndMaxBy() async throws {
+    let set = ThreadSafeSet([3, 1, 2])
+    #expect(await set.min(by: <) == 1)
+    #expect(await set.max(by: <) == 3)
+}
+
+@Test func setActorReduceNonInto() async throws {
+    let set = ThreadSafeSet([1, 2, 3, 4])
+    let sum = await set.reduce(0, +)
+    #expect(sum == 10)
+}
+
+@Test func setActorReduceInto() async throws {
+    let set = ThreadSafeSet([1, 2, 3, 4])
+    let sum = await set.reduce(into: 0) { $0 += $1 }
+    #expect(sum == 10)
+}
+
+@Test func setActorRandomElement() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    let element = await set.randomElement()
+    #expect([1, 2, 3].contains(element!))
+
+    let empty = ThreadSafeSet<Int>()
+    #expect(await empty.randomElement() == nil)
+}
+
+@Test func setActorAllSatisfy() async throws {
+    let set = ThreadSafeSet([2, 4, 6])
+    #expect(await set.allSatisfy { $0 % 2 == 0 })
+    #expect(await set.allSatisfy { $0 > 2 } == false)
+}
+
+@Test func setActorCompactMap() async throws {
+    let set = ThreadSafeSet([1, 2, 3, 4])
+    #expect(Set(await set.compactMap { $0 % 2 == 0 ? $0 : nil }) == [2, 4])
+}
+
+@Test func setActorSortedBy() async throws {
+    let set = ThreadSafeSet([3, 1, 2])
+    #expect(await set.sorted(by: >) == [3, 2, 1])
+}
+
+@Test func setActorSortedMinMax() async throws {
+    let set = ThreadSafeSet([3, 1, 2])
+    #expect(await set.sorted() == [1, 2, 3])
+    #expect(await set.min() == 1)
+    #expect(await set.max() == 3)
+}
