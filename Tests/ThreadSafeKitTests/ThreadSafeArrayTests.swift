@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeArrayAppendAndRead(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
@@ -211,6 +211,70 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     array[1] = 20
     #expect(array.elements == [1, 20, 3])
+}
+
+// `array[0] += 1` holds the write lock across the whole get-modify-set (see the subscript's doc
+// comment in ThreadSafe+Array.swift) — unlike the old get/set-accessor subscript, concurrent
+// compound assignment through it can't lose updates.
+//
+// 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
+// iteration per increment) — matching `concurrentAppendsPreserveEveryElement`'s pattern above.
+// On `.dispatchQueue`, every compound assignment "parks" a barrier block on the same global
+// concurrent thread pool `concurrentPerform` itself draws workers from; issuing thousands of
+// single-increment iterations there was observed to starve that pool (every worker blocked
+// waiting for another worker to run its parked block, with none free to do so) and hang.
+@Test(arguments: mechanisms) func threadSafeArraySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([0], mechanism: mechanism)
+    let workers = 8
+    let perWorker = 250
+    DispatchQueue.concurrentPerform(iterations: workers) { _ in
+        for _ in 0..<perWorker { array[0] += 1 }
+    }
+    #expect(array[0] == workers * perWorker)
+}
+
+// Plain `array[i] = v` assignment running concurrently with readers must not corrupt the array
+// (each reader's snapshot always has the original element count) — mirrors
+// `threadSafeArrayConcurrentReadsDuringWritesDoNotRace` above, but exercising the subscript
+// setter specifically rather than `append`.
+@Test(arguments: mechanisms) func threadSafeArraySubscriptAssignmentIsSafeAlongsideConcurrentReaders(mechanism: ThreadSafeMechanism) throws {
+    let writerCount = 8
+    let array = ThreadSafe(Array(0..<writerCount), mechanism: mechanism)
+    DispatchQueue.concurrentPerform(iterations: writerCount * 2) { i in
+        if i < writerCount {
+            for value in 0..<1_000 { array[i] = value }
+        } else {
+            for _ in 0..<1_000 {
+                #expect(array.elements.count == writerCount, "concurrent subscript assignment corrupted array size")
+            }
+        }
+    }
+    #expect(array.count == writerCount)
+}
+
+private struct BumpError: Error {}
+
+private extension Int {
+    mutating func bumpOrThrow() throws {
+        self += 1
+        throw BumpError()
+    }
+}
+
+// A throwing mutating call through the subscript's `_modify` must still release the write lock —
+// `_modify`'s `defer { endModify() }` runs on the throwing path exactly like any other `defer`.
+@Test(arguments: mechanisms) func threadSafeArraySubscriptModifyReleasesLockWhenMutatingCallThrows(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([0], mechanism: mechanism)
+    #expect(throws: BumpError.self) {
+        try array[0].bumpOrThrow()
+    }
+    // The mutation before the throw is kept (`_modify` isn't transactional, matching `mutate`) —
+    // what's under test is that the lock was released, not that the throw rolled anything back.
+    #expect(array[0] == 1)
+    // A follow-up access succeeding (rather than deadlocking or trapping on "already held") is
+    // the actual proof the lock was released.
+    array[0] += 1
+    #expect(array[0] == 2)
 }
 
 @Test(arguments: mechanisms) func threadSafeArrayConcurrentAppendsDoNotDropWrites(mechanism: ThreadSafeMechanism) throws {
