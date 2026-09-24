@@ -83,7 +83,7 @@ if let i = list.firstIndex(of: x) {
 list.removeAll(where: { $0 == x })
 ```
 
-`mutate(_:)` holds the lock/queue/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
+`mutate(_:)` holds the lock/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
 
 ```swift
 await dict.mutate { storage in
@@ -112,7 +112,7 @@ let nextID = await idGenerator.mutate { value in
 
 **Don't call back into the same instance, and don't nest two instances in opposite orders.** Inside a `mutate` (or `forEach`/`map`/`removeAll(where:)`/… closure), touching the *same* `ThreadSafe` instance traps immediately. Nesting a *different* instance works (`a.mutate { _ in b.mutate { … } }`), but if one thread nests `a` → `b` while another nests `b` → `a`, each holds one lock and waits for the other, and both hang forever with no trap. Avoid nesting different instances; if you must, always nest them in the same order, or snapshot one first (`let bValue = b.wrappedValue`) and then `mutate` the other. The actor types can't deadlock this way: their `mutate` closure is synchronous, so it can't `await` another actor.
 
-**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
+**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
 ### Codable and Equatable
 
@@ -156,6 +156,17 @@ Shape-specific members mirror the standard library's own `Array`/`Dictionary`/`S
 One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
 
 Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below.
+
+### Why not `DispatchQueue`?
+
+A concurrent `DispatchQueue` with barrier writes is the classic reader-writer pattern, and `ThreadSafe` used it originally. It was removed because it can't support the subscript semantics this library promises:
+
+- **Atomic in-place edits need a lock that can be held across a `yield`.** `ts[i] += 1` and `dict[k]?.append(x)` run through a `_modify` accessor, which holds exclusive access while the caller's code edits the value in place. GCD only provides exclusivity *inside* a `queue.sync { }` closure, and you can't `yield` out of a closure. With a queue, those edits split into a separate read and write, which loses updates under concurrency.
+- **The only queue-based workaround is slow and fragile.** "Parking" the queue (an async barrier block that waits on a semaphore until the edit finishes) measured ~6 µs per compound edit, ties up a GCD worker thread for each one, and can stall the main thread behind a low-priority worker, since semaphores don't boost priority.
+- **It's slower even without that.** A queue hop measured ~150-250 ns per plain read or write, against a few ns for a bare lock.
+- **Reentrancy could deadlock silently.** A read nested inside another read (e.g. `ts.count` inside `ts.forEach { }`) hung forever as soon as a writer queued between them, instead of trapping.
+
+`.lock` and `.readerWriterLock` lock and unlock manually, so a subscript's in-place edit holds the lock for exactly the access, and same-instance reentry traps immediately. See [Benchmarks](#benchmarks) for current per-operation costs.
 
 `Value`'s shape determines which members are available, added via constrained extensions:
 
@@ -203,7 +214,7 @@ When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of me
 
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`updateValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
 
-`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/queue/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
+`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
 
 ## Benchmarks
 
