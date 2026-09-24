@@ -50,3 +50,51 @@ func assertFast(
         sourceLocation: sourceLocation
     )
 }
+
+/// Asserts `wrapped` doesn't average more than `maxOverhead`x the per-call cost of `raw`,
+/// each sampled `sampleSize` times back-to-back (so both see comparable CPU/scheduler
+/// conditions). Bounded by ratio, not absolute time, so it stays meaningful across
+/// machines/CI load — same rationale as the collection-size regression tests in
+/// ThreadSafePerformanceTests.swift. `minFloorNanoseconds` guards against flakiness when
+/// `raw` itself is near-zero: without it, tiny measurement noise in `raw` could make the
+/// ratio swing wildly even though the absolute cost of `wrapped` is trivial.
+func assertOverheadBounded(
+    _ label: String,
+    sampleSize: Int = 5_000,
+    maxOverhead: Double = 40.0,
+    minFloorNanoseconds: Double = 40_000,
+    sourceLocation: SourceLocation = #_sourceLocation,
+    raw: () -> Void,
+    wrapped: () -> Void
+) {
+    let rawNs = averageNanoseconds(over: sampleSize, raw)
+    let wrappedNs = averageNanoseconds(over: sampleSize, wrapped)
+    let ceiling = max(rawNs * maxOverhead, minFloorNanoseconds)
+    #expect(
+        wrappedNs < ceiling,
+        "\(label): wrapped (\(wrappedNs) ns/op) exceeded \(maxOverhead)x raw (\(rawNs) ns/op) — ceiling was \(ceiling) ns/op",
+        sourceLocation: sourceLocation
+    )
+}
+
+/// Actor-hop cost via `await` dwarfs raw synchronous access regardless of what the actor's
+/// body does — this bounds the wrapper against a *real* regression (e.g. an accidental O(n)
+/// copy inside the actor method) without tripping on that inherent, unavoidable hop cost.
+func assertOverheadBounded(
+    _ label: String,
+    sampleSize: Int = 1_000,
+    maxOverhead: Double = 300.0,
+    minFloorNanoseconds: Double = 20_000,
+    sourceLocation: SourceLocation = #_sourceLocation,
+    raw: () -> Void,
+    wrapped: () async -> Void
+) async {
+    let rawNs = averageNanoseconds(over: sampleSize, raw)
+    let wrappedNs = await averageNanoseconds(over: sampleSize, wrapped)
+    let ceiling = max(rawNs * maxOverhead, minFloorNanoseconds)
+    #expect(
+        wrappedNs < ceiling,
+        "\(label): wrapped (\(wrappedNs) ns/op) exceeded \(maxOverhead)x raw (\(rawNs) ns/op) — ceiling was \(ceiling) ns/op",
+        sourceLocation: sourceLocation
+    )
+}
