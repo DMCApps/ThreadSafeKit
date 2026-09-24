@@ -1,17 +1,26 @@
-// Per-operation cost of ThreadSafeKit vs. the raw stdlib type it wraps.
+// Per-operation cost of ThreadSafeKit vs. the raw stdlib type it wraps, compared against the
+// previous run.
 //
-//     swift run -c release ThreadSafeKitBenchmarks [--output <path>] [--strict]
+//     swift run -c release ThreadSafeKitBenchmarks [--runs <n>] [--output <path>] [--baseline <path>]
+//                                                  [--threshold <percent>] [--strict]
 //
-//     --output <path>  Also write the report (Markdown) to <path>. The committed copy lives at
-//                      Benchmarks/RESULTS.md: regenerate it with
-//                      `swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md`.
-//     --strict         Exit with status 1 if any row FAILs (default: always exit 0).
+//     --runs <n>             Repeat the whole suite n times and report the median (default: 5).
+//     --output <path>        Also write the report to <path> (Markdown) and its raw numbers to the
+//                            same path with a .json extension. The committed copies are
+//                            Benchmarks/RESULTS.md and Benchmarks/RESULTS.json.
+//     --readme <path>        Also replace the section between `<!-- BENCHMARKS:START -->` and
+//                            `<!-- BENCHMARKS:END -->` in <path> (the README) with the results table.
+//     --baseline <path>      Previous run to compare against (default: Benchmarks/RESULTS.json).
+//     --render <path>        Don't run anything: rewrite the --readme section from a saved results
+//                            file, e.g. `--render Benchmarks/RESULTS.json --readme README.md`.
+//     --threshold <percent>  Deviation that gets flagged (default: 30).
+//     --strict               Exit with status 1 if any column is flagged SLOWER.
 //
-// Prints one table: each operation's cost on the raw type (unsynchronized, single thread), the
-// actor type, and `ThreadSafe` under each mechanism, plus PASS/FAIL against the criteria below.
-// The test suite's performance tests are regression guards that have to survive debug builds,
-// parallel tests, and TSan; this is where real numbers come from. Each figure is the minimum
-// per-call average over several batches, which filters out batches inflated by preemption.
+// Each figure is the median across runs of the minimum per-call average over several batches:
+// the in-run minimum filters out batches inflated by preemption, and the median across whole runs
+// ignores an outlier run without having to pick a cutoff. There's no absolute pass/fail: a change is flagged when a column moves
+// more than the threshold (and more than a few ns) against the baseline, so it can be investigated.
+// Baselines are only compared when they came from the same machine and CPU.
 
 import Dispatch
 import Foundation
@@ -28,18 +37,12 @@ func refuseDebugBuild() {
 }
 refuseDebugBuild()
 
-// MARK: - Criteria
+// MARK: - Comparison
 
-/// Single-thread rows: each wrapped column must cost at most `max(raw × ratio, floor)`. The floor
-/// stops a near-zero raw cost from making the ratio impossible to meet.
-let syncMaxRatio = 25.0
-let syncFloorNs = 100.0
-/// The actor column gets a looser budget: every call is an `await` into another isolation domain.
-let actorMaxRatio = 50.0
-let actorFloorNs = 250.0
-/// Contended rows have no raw baseline (unsynchronized concurrent access to the raw type is a
-/// data race), so they're held to an absolute wall-clock ceiling per operation instead.
-let contendedCeilingNs = 1_000.0
+/// A column is flagged when it moves more than `threshold` percent against the baseline...
+let defaultThresholdPercent = 30.0
+/// ...and by more than this many ns, so tiny figures don't get flagged for sub-ns jitter.
+let minimumDeltaNs = 5.0
 
 // MARK: - Harness
 
@@ -114,46 +117,143 @@ func measureContended(_ body: @Sendable @escaping (Int) async -> Void) async -> 
     return best
 }
 
-// MARK: - Table
+// MARK: - Results
 
-struct Row {
+struct Row: Codable {
     let operation: String
     let raw: Double?
     let actor: Double?
     let lock: Double?
     let readerWriterLock: Double?
     let contended: Bool
+    /// Largest run-to-run spread, (max − min) / median in percent, across the compared columns.
+    /// How much of a baseline change could just be noise. Nil for a single run.
+    var spreadPercent: Double? = nil
+}
 
-    /// Names of the columns that miss their budget; empty means PASS.
-    var failures: [String] {
-        func over(_ value: Double?, ratio: Double, floor: Double) -> Bool {
-            guard let value else { return false }
-            if contended { return value > contendedCeilingNs }
-            guard let raw else { return false }
-            return value > max(raw * ratio, floor)
-        }
-        var names: [String] = []
-        if over(actor, ratio: actorMaxRatio, floor: actorFloorNs) { names.append("actor") }
-        if over(lock, ratio: syncMaxRatio, floor: syncFloorNs) { names.append(".lock") }
-        if over(readerWriterLock, ratio: syncMaxRatio, floor: syncFloorNs) { names.append(".readerWriterLock") }
-        return names
+func median(_ values: [Double]) -> Double {
+    let sorted = values.sorted()
+    let middle = sorted.count / 2
+    return sorted.count.isMultiple(of: 2) ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
+}
+
+/// Combines the same row from several runs into one: each figure is the median across runs.
+func combine(_ runs: [Row]) -> Row {
+    let first = runs[0]
+    func medianOf(_ keyPath: KeyPath<Row, Double?>) -> Double? {
+        let values = runs.compactMap { $0[keyPath: keyPath] }
+        return values.isEmpty ? nil : median(values)
+    }
+    var spread: Double?
+    if runs.count > 1 {
+        spread = comparedColumns.compactMap { column -> Double? in
+            let values = runs.compactMap { $0[keyPath: column.keyPath] }
+            guard let low = values.min(), let high = values.max() else { return nil }
+            let middle = median(values)
+            return middle > 0 ? (high - low) / middle * 100 : nil
+        }.max()
+    }
+    return Row(
+        operation: first.operation,
+        raw: medianOf(\.raw),
+        actor: medianOf(\.actor),
+        lock: medianOf(\.lock),
+        readerWriterLock: medianOf(\.readerWriterLock),
+        contended: first.contended,
+        spreadPercent: spread
+    )
+}
+
+struct SystemInfo: Codable, Equatable {
+    let date: String
+    let machine: String
+    let cpu: String
+    let cores: String
+    let memory: String
+    let os: String
+    let compiler: String
+
+    /// Whether numbers from `other` can be meaningfully compared with numbers from this system.
+    func isComparable(with other: SystemInfo) -> Bool {
+        machine == other.machine && cpu == other.cpu
     }
 }
 
-/// `rows` as a Markdown table: readable in a terminal, and by agents via `--output`.
-func markdownTable(_ rows: [Row]) -> String {
-    let headers = ["Operation", "Raw", "actor", ".lock", ".readerWriterLock", "Result"]
-    func cell(_ value: Double?) -> String { value.map { String(format: "%.1f", $0) } ?? "-" }
+/// One run: what the JSON file holds, and what the next run compares against.
+struct Snapshot: Codable {
+    let system: SystemInfo
+    let rows: [Row]
+    /// How many whole-suite runs each median came from.
+    var runs: Int? = nil
+}
+
+/// The columns compared against the baseline. Raw isn't one: it measures the stdlib, not this
+/// library, so it's shown for context only.
+let comparedColumns: [(name: String, keyPath: KeyPath<Row, Double?> & Sendable)] = [
+    ("actor", \.actor),
+    (".lock", \.lock),
+    (".readerWriterLock", \.readerWriterLock),
+]
+
+func percentChange(_ current: Double, from previous: Double) -> Double {
+    (current - previous) / previous * 100
+}
+
+/// "SLOWER"/"FASTER" flags for `row` against `previous`; empty when nothing moved enough. A change
+/// must exceed the threshold, the two runs' combined run-to-run spread (so a noisy baseline row
+/// doesn't produce a false flag), and `minimumDeltaNs`.
+func flags(for row: Row, against previous: Row, thresholdPercent: Double) -> (slower: [String], faster: [String]) {
+    var slower: [String] = []
+    var faster: [String] = []
+    let noisePercent = (row.spreadPercent ?? 0) + (previous.spreadPercent ?? 0)
+    for column in comparedColumns {
+        guard let now = row[keyPath: column.keyPath], let before = previous[keyPath: column.keyPath], before > 0 else { continue }
+        let change = percentChange(now, from: before)
+        guard abs(change) > max(thresholdPercent, noisePercent), abs(now - before) > minimumDeltaNs else { continue }
+        let text = "\(column.name) \(String(format: "%+.0f%%", change))"
+        if change > 0 { slower.append(text) } else { faster.append(text) }
+    }
+    return (slower, faster)
+}
+
+/// `rows` as a Markdown table: readable in a terminal, and by agents via `--output`. With a
+/// baseline, each figure shows its change and the last column says whether anything moved.
+func markdownTable(_ rows: [Row], baseline: [String: Row]?, thresholdPercent: Double) -> String {
+    let headers = ["Operation", "Raw", "actor", ".lock", ".readerWriterLock", "Spread"] + (baseline == nil ? [] : ["vs. baseline"])
+    func cell(_ value: Double?, _ previous: Double?) -> String {
+        guard let value else { return "-" }
+        let figure = String(format: "%.1f", value)
+        guard let previous, previous > 0 else { return figure }
+        return figure + " (" + String(format: "%+.0f%%", percentChange(value, from: previous)) + ")"
+    }
     let body: [[String]] = rows.map { row in
-        let failures = row.failures
-        let result = failures.isEmpty ? "PASS" : "FAIL (\(failures.joined(separator: ", ")))"
-        return [row.operation, cell(row.raw), cell(row.actor), cell(row.lock), cell(row.readerWriterLock), result]
+        let previous = baseline?[row.operation]
+        var cells = [
+            row.operation,
+            cell(row.raw, previous?.raw),
+            cell(row.actor, previous?.actor),
+            cell(row.lock, previous?.lock),
+            cell(row.readerWriterLock, previous?.readerWriterLock),
+            row.spreadPercent.map { String(format: "±%.0f%%", $0 / 2) } ?? "-",
+        ]
+        if let baseline {
+            if let previous = baseline[row.operation] {
+                let (slower, faster) = flags(for: row, against: previous, thresholdPercent: thresholdPercent)
+                var verdict: [String] = []
+                if !slower.isEmpty { verdict.append("⚠️ SLOWER: " + slower.joined(separator: ", ")) }
+                if !faster.isEmpty { verdict.append("FASTER: " + faster.joined(separator: ", ")) }
+                cells.append(verdict.isEmpty ? "ok" : verdict.joined(separator: "; "))
+            } else {
+                cells.append("new")
+            }
+        }
+        return cells
     }
     let widths = headers.indices.map { column in
         ([headers[column]] + body.map { $0[column] }).map(\.count).max()!
     }
-    // Text columns (first and last) are left-aligned; number columns are right-aligned.
-    func isText(_ column: Int) -> Bool { column == 0 || column == headers.count - 1 }
+    // Operation and verdict columns are left-aligned; figure columns are right-aligned.
+    func isText(_ column: Int) -> Bool { column == 0 || column == 6 }
     func line(_ cells: [String]) -> String {
         let padded = cells.enumerated().map { column, text in
             let padding = String(repeating: " ", count: widths[column] - text.count)
@@ -301,26 +401,43 @@ func runBenchmarks() async -> [Row] {
 // MARK: - Report
 
 struct Options {
+    var runs = 5
     var outputPath: String?
+    var readmePath: String?
+    var renderPath: String?
+    var baselinePath = "Benchmarks/RESULTS.json"
+    var thresholdPercent = defaultThresholdPercent
     var strict = false
 
     init(_ arguments: [String]) {
         var remaining = arguments.dropFirst()
+        func value(for flag: String) -> String {
+            guard let value = remaining.popFirst() else { Self.usage("\(flag) needs a value") }
+            return value
+        }
         while let argument = remaining.popFirst() {
             switch argument {
-            case "--output":
-                guard let path = remaining.popFirst() else { Self.usage("--output needs a path") }
-                outputPath = path
-            case "--strict":
-                strict = true
-            default:
-                Self.usage("unknown argument '\(argument)'")
+            case "--runs":
+                guard let count = Int(value(for: argument)), count > 0 else { Self.usage("--runs needs a positive integer") }
+                runs = count
+            case "--output": outputPath = value(for: argument)
+            case "--readme": readmePath = value(for: argument)
+            case "--render": renderPath = value(for: argument)
+            case "--baseline": baselinePath = value(for: argument)
+            case "--threshold":
+                guard let percent = Double(value(for: argument)), percent > 0 else { Self.usage("--threshold needs a positive number") }
+                thresholdPercent = percent
+            case "--strict": strict = true
+            default: Self.usage("unknown argument '\(argument)'")
             }
         }
     }
 
     static func usage(_ problem: String) -> Never {
-        print("ThreadSafeKitBenchmarks: \(problem)\nusage: ThreadSafeKitBenchmarks [--output <path>] [--strict]")
+        print("""
+        ThreadSafeKitBenchmarks: \(problem)
+        usage: ThreadSafeKitBenchmarks [--runs <n>] [--output <path>] [--readme <path>] [--render <path>] [--baseline <path>] [--threshold <percent>] [--strict]
+        """)
         exit(2)
     }
 }
@@ -354,74 +471,156 @@ func compilerVersion() -> String {
 }
 
 /// The system the numbers came from. Results depend heavily on the machine (CPU, core count and
-/// type), so they're only comparable between runs on the same system.
-func systemTable() -> String {
+/// type), so baselines are only compared when they came from the same machine and CPU.
+func currentSystem() -> SystemInfo {
     let info = ProcessInfo.processInfo
     let performanceCores = sysctlInt("hw.perflevel0.physicalcpu")
     let efficiencyCores = sysctlInt("hw.perflevel1.physicalcpu")
     let coreSplit = [performanceCores.map { "\($0) performance" }, efficiencyCores.map { "\($0) efficiency" }]
         .compactMap { $0 }.joined(separator: " + ")
-    let memoryGB = sysctlInt("hw.memsize").map { "\($0 / 1_073_741_824) GB" } ?? "unknown"
-    let fields: [(String, String)] = [
-        ("Date", ISO8601DateFormatter().string(from: Date())),
-        ("Machine", sysctlString("hw.model") ?? "unknown"),
-        ("CPU", sysctlString("machdep.cpu.brand_string") ?? "unknown"),
-        ("Cores", "\(info.activeProcessorCount) active" + (coreSplit.isEmpty ? "" : " (\(coreSplit))")),
-        ("Memory", memoryGB),
-        ("OS", "macOS \(info.operatingSystemVersionString)"),
-        ("Compiler", compilerVersion() + ", release build"),
+    return SystemInfo(
+        date: ISO8601DateFormatter().string(from: Date()),
+        machine: sysctlString("hw.model") ?? "unknown",
+        cpu: sysctlString("machdep.cpu.brand_string") ?? "unknown",
+        cores: "\(info.activeProcessorCount) active" + (coreSplit.isEmpty ? "" : " (\(coreSplit))"),
+        memory: sysctlInt("hw.memsize").map { "\($0 / 1_073_741_824) GB" } ?? "unknown",
+        os: "macOS \(info.operatingSystemVersionString)",
+        compiler: compilerVersion() + ", release build"
+    )
+}
+
+func systemTable(_ system: SystemInfo) -> String {
+    let fields = [
+        ("Date", system.date), ("Machine", system.machine), ("CPU", system.cpu), ("Cores", system.cores),
+        ("Memory", system.memory), ("OS", system.os), ("Compiler", system.compiler),
     ]
     return (["| | |", "| --- | --- |"] + fields.map { "| \($0.0) | \($0.1) |" }).joined(separator: "\n")
 }
 
 let options = Options(CommandLine.arguments)
-print("Running ThreadSafeKit benchmarks (release build, ~1 minute)…")
-let rows = await runBenchmarks()
-let failed = rows.filter { !$0.failures.isEmpty }.count
+
+if let renderPath = options.renderPath {
+    guard let readmePath = options.readmePath else { Options.usage("--render needs --readme <path>") }
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: renderPath)),
+          let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data)
+    else {
+        print("ThreadSafeKitBenchmarks: couldn't read results from \(renderPath)")
+        exit(2)
+    }
+    updateReadme(at: readmePath, rows: snapshot.rows, system: snapshot.system, runs: snapshot.runs ?? options.runs)
+    exit(0)
+}
+
+let system = currentSystem()
+
+// Load the baseline before running, so `--output` can overwrite the same file afterwards.
+let baselineSnapshot: Snapshot? = (try? Data(contentsOf: URL(fileURLWithPath: options.baselinePath)))
+    .flatMap { try? JSONDecoder().decode(Snapshot.self, from: $0) }
+let comparableBaseline = baselineSnapshot.flatMap { $0.system.isComparable(with: system) ? $0 : nil }
+let baselineNote: String
+switch (baselineSnapshot, comparableBaseline) {
+case (nil, _):
+    baselineNote = "No baseline found at `\(options.baselinePath)`, so there's nothing to compare against yet."
+case (let snapshot?, nil):
+    baselineNote = "Baseline `\(options.baselinePath)` is from a different system (\(snapshot.system.machine), \(snapshot.system.cpu)), so it isn't compared. Numbers are only comparable on the same machine."
+case (_, let snapshot?):
+    baselineNote = "Compared with `\(options.baselinePath)` from \(snapshot.system.date). Percentages are the change from that run. Anything flagged moved more than \(Int(options.thresholdPercent))%, beyond both runs' noise, and by more than \(Int(minimumDeltaNs)) ns: investigate it before accepting the new numbers."
+}
+
+print("Running ThreadSafeKit benchmarks: \(options.runs) run(s), ~20 seconds each…")
+var runs: [[Row]] = []
+for run in 1...options.runs {
+    runs.append(await runBenchmarks())
+    print("  run \(run)/\(options.runs) done")
+}
+let rows = runs[0].indices.map { index in combine(runs.map { $0[index] }) }
+let baselineRows = comparableBaseline.map { Dictionary($0.rows.map { ($0.operation, $0) }, uniquingKeysWith: { first, _ in first }) }
+let slowerCount = baselineRows.map { previous in
+    rows.filter { row in previous[row.operation].map { !flags(for: row, against: $0, thresholdPercent: options.thresholdPercent).slower.isEmpty } ?? false }.count
+} ?? 0
 
 let report = """
 # ThreadSafeKit benchmarks
 
-ns/op, lower is better; each figure is the minimum per-call average over \(batches) batches.
-Numbers are only comparable between runs on the same machine.
-
-Regenerate: `swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md`
+Regenerate (and update the baseline and README): `swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md --readme README.md`
 
 ## Results
 
-\(markdownTable(rows))
+\(baselineNote)
 
-**\(rows.count - failed)/\(rows.count) PASS**
+\(markdownTable(rows, baseline: baselineRows, thresholdPercent: options.thresholdPercent))
+\(baselineRows == nil ? "" : "\n**\(slowerCount) of \(rows.count) operations flagged slower.**\n")
+### Legend
+
+- **Units:** every figure is **nanoseconds per operation (ns/op)**. Lower is better. 1,000 ns = 1 µs.
+- **Raw:** the unsynchronized stdlib type (`Array`/`Dictionary`/`Set`/`Int`) on a single thread. Context for what the wrapper adds; not compared against the baseline.
+- **actor:** the actor type (`ThreadSafeArray`/`ThreadSafeDictionary`/`ThreadSafeSet`/`ThreadSafeAtomic`), called with `await`. Where it has no direct equivalent it uses the closest API (`a[i] = v` → `setElement`, `+=` → `mutate`, `d[k] = v` → `updateValue`).
+- **.lock / .readerWriterLock:** `ThreadSafe<Value>` with that `ThreadSafeMechanism`.
+- **Contended rows:** \(contendedWorkers) concurrent workers on one shared instance, reported as wall-clock ns per operation. No Raw figure: unsynchronized concurrent access to the raw type would be a data race.
+- **How each figure is measured:** the median of \(options.runs) whole-suite run(s). Within a run, it's the fastest per-call average over \(batches) batches, which filters out batches slowed by preemption; the median across runs then ignores an outlier run.
+- **Spread:** the largest run-to-run variation in the row (± half of max − min, as a % of the median). A baseline change within that range is likely noise.
+- **(+n%) / (−n%):** change from the baseline run. Positive = slower.
+- **vs. baseline:** `ok` = nothing moved enough to flag; `⚠️ SLOWER` / `FASTER` = a column moved more than \(Int(options.thresholdPercent))%, more than the two runs' combined spread, **and** more than \(Int(minimumDeltaNs)) ns; `new` = no baseline figure for this operation. Investigate a ⚠️ before accepting the new numbers. If the change is expected, regenerate with `--output` and commit the results as the new baseline.
 
 ## System
 
-Numbers depend heavily on the machine, so compare them only against runs on the same system.
-
-\(systemTable())
-
-## Criteria
-
-- **Raw** is the unsynchronized stdlib type (`Array`/`Dictionary`/`Set`/`Int`) on a single thread.
-- **Single-thread:** `.lock` / `.readerWriterLock` ≤ max(Raw × \(Int(syncMaxRatio)), \(Int(syncFloorNs)) ns); actor ≤ max(Raw × \(Int(actorMaxRatio)), \(Int(actorFloorNs)) ns).
-- **Contended:** every column ≤ \(Int(contendedCeilingNs)) ns/op wall-clock with \(contendedWorkers) concurrent workers. No Raw baseline: unsynchronized concurrent access to the raw type would be a data race.
-- The actor column uses the actor's equivalent API where there's no direct one (`a[i] = v` → `setElement`, `+=` → `mutate`, `d[k] = v` → `updateValue`).
+\(systemTable(system))
 
 """
 
 print("\n" + report)
 
 if let path = options.outputPath {
+    let markdownURL = URL(fileURLWithPath: path)
+    let jsonURL = markdownURL.deletingPathExtension().appendingPathExtension("json")
     do {
-        let url = URL(fileURLWithPath: path)
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try report.write(to: url, atomically: true, encoding: .utf8)
-        print("Wrote \(path)")
+        try FileManager.default.createDirectory(at: markdownURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try report.write(to: markdownURL, atomically: true, encoding: .utf8)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(Snapshot(system: system, rows: rows, runs: options.runs)).write(to: jsonURL, options: .atomic)
+        print("Wrote \(markdownURL.path) and \(jsonURL.path)")
+    } catch {
+        print("ThreadSafeKitBenchmarks: couldn't write results: \(error)")
+        exit(2)
+    }
+}
+
+/// The README copy: the table without baseline deltas, plus a short legend. GitHub Markdown can't
+/// include another file, so the section between the markers is regenerated in place instead.
+func updateReadme(at path: String, rows: [Row], system: SystemInfo, runs: Int) {
+    let startMarker = "<!-- BENCHMARKS:START -->"
+    let endMarker = "<!-- BENCHMARKS:END -->"
+    guard let readme = try? String(contentsOfFile: path, encoding: .utf8),
+          let start = readme.range(of: startMarker), let end = readme.range(of: endMarker),
+          start.upperBound <= end.lowerBound
+    else {
+        print("ThreadSafeKitBenchmarks: couldn't find \(startMarker) … \(endMarker) in \(path)")
+        exit(2)
+    }
+    let section = """
+
+    <!-- Generated by ThreadSafeKitBenchmarks (--readme); edits between these markers are overwritten. -->
+
+    \(markdownTable(rows, baseline: nil, thresholdPercent: options.thresholdPercent))
+
+    Nanoseconds per operation (ns/op), lower is better; median of \(runs) runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are \(contendedWorkers) concurrent workers on one instance (no Raw figure: that would be a data race). Measured on \(system.cpu) (\(system.machine)), \(system.os), \(system.date). Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
+
+    """
+    let updated = readme.replacingCharacters(in: start.upperBound..<end.lowerBound, with: section)
+    do {
+        try updated.write(toFile: path, atomically: true, encoding: .utf8)
+        print("Updated benchmarks section in \(path)")
     } catch {
         print("ThreadSafeKitBenchmarks: couldn't write \(path): \(error)")
         exit(2)
     }
 }
 
-if options.strict && failed > 0 {
+if let path = options.readmePath {
+    updateReadme(at: path, rows: rows, system: system, runs: options.runs)
+}
+
+if options.strict && slowerCount > 0 {
     exit(1)
 }
