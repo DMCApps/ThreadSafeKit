@@ -225,24 +225,24 @@ Per-operation cost of each type and mechanism against the raw stdlib type. The t
 
 | Operation                        |  Raw | actor | .lock | .readerWriterLock | Spread |
 | -------------------------------- | ---: | ----: | ----: | ----------------: | -----: |
-| Array count                      |  4.9 |  33.6 |  18.2 |              31.7 |    ±3% |
-| Array a[i] get                   |  5.1 |  34.1 |  44.8 |              58.2 |    ±3% |
-| Array a[i] = v                   |  2.0 |  57.2 |  56.4 |              69.3 |    ±3% |
-| Array a[i] += 1                  |  2.0 |  30.2 |  56.3 |              69.1 |    ±3% |
-| Array append + popLast           |  2.5 | 123.7 |  91.5 |             120.1 |    ±4% |
-| Dictionary d[k] get              |  9.6 |  41.0 |  39.7 |              53.7 |    ±3% |
-| Dictionary d[k] = v              |  6.7 |  75.2 | 227.9 |             242.3 |    ±5% |
-| Dictionary d[k]! += 1            |  6.9 |  35.0 | 231.7 |             243.2 |    ±4% |
-| Dictionary updateValue           |  7.4 |  75.1 |  56.3 |              72.0 |    ±2% |
-| Set contains                     |  8.4 |  37.2 |  21.4 |              35.0 |    ±3% |
-| Set insert + remove              | 13.1 | 176.5 | 128.5 |             165.5 |    ±7% |
-| Scalar read                      |  1.7 |  27.5 |  11.2 |              24.8 |    ±2% |
-| Scalar mutate { += 1 }           |  1.2 |  29.7 |  10.0 |              23.4 |    ±3% |
-| Contended 90% read / 10% write   |    - | 250.4 |  66.4 |            1341.3 |    ±6% |
-| Contended 100% read              |    - | 271.5 | 104.6 |             367.4 |    ±6% |
-| Contended 100% write (a[i] += 1) |    - | 279.1 | 161.5 |            2497.5 |    ±4% |
+| Array count                      |  5.0 |  35.3 |   4.3 |              20.2 |    ±5% |
+| Array a[i] get                   |  5.1 |  34.9 |   4.3 |              20.6 |    ±3% |
+| Array a[i] = v                   |  2.0 |  58.5 |  30.6 |              46.2 |    ±1% |
+| Array a[i] += 1                  |  2.0 |  31.1 |  11.6 |              27.2 |    ±4% |
+| Array append + popLast           |  2.5 | 124.5 |  19.4 |              51.5 |    ±3% |
+| Dictionary d[k] get              |  9.9 |  41.8 |   8.3 |              24.0 |    ±2% |
+| Dictionary d[k] = v              |  7.0 |  75.9 |  18.8 |              34.7 |    ±2% |
+| Dictionary d[k]! += 1            |  7.5 |  34.4 |  18.4 |              34.6 |    ±4% |
+| Dictionary updateValue           |  7.8 |  76.3 |  13.9 |              30.2 |    ±8% |
+| Set contains                     |  8.6 |  38.5 |   7.2 |              23.5 |    ±3% |
+| Set insert + remove              | 18.1 | 222.9 |  37.5 |              57.1 |    ±1% |
+| Scalar read                      |  1.8 |  28.0 |   4.3 |              19.9 |    ±3% |
+| Scalar mutate { += 1 }           |  1.3 |  30.1 |   3.8 |              20.0 |    ±4% |
+| Contended 90% read / 10% write   |    - | 258.6 |  44.9 |            1330.3 |    ±5% |
+| Contended 100% read              |    - | 273.3 |  44.9 |             338.5 |    ±4% |
+| Contended 100% write (a[i] += 1) |    - | 280.7 |  74.0 |            2262.1 |    ±1% |
 
-Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are 8 concurrent workers on one instance (no Raw figure: that would be a data race). Measured on Apple M4 Max (Mac16,6), macOS Version 26.6.2 (Build 25G83), 2026-09-24T20:01:15Z. Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
+Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are 8 concurrent workers on one instance (no Raw figure: that would be a data race). Measured on Apple M4 Max (Mac16,6), macOS Version 26.6.2 (Build 25G83), 2026-09-24T20:45:27Z. Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
 <!-- BENCHMARKS:END -->
 
 ## Testing
@@ -256,6 +256,8 @@ Also run with the Thread Sanitizer before trusting a change to locking/concurren
 ```
 swift test --sanitize=thread
 ```
+
+Run TSan on the default debug build. In a release build (`-c release -Xswiftc -enable-testing --sanitize=thread`), it can intermittently report a data race in `concurrentReadSnapshotsAreInternallyConsistent`. That's a false positive: once the `@inlinable` members are specialized, the array's copy-on-write buffer write happens in instrumented code, but TSan can't see the Swift runtime's reference counting that orders it after the reader drops its copy. A plain `Array` behind a plain `pthread_rwlock` reports the same thing. The timing-based tests also fail under TSan, since it slows everything down.
 
 Timing-based tests (fixed absolute-time or relative-overhead ceilings) are tagged `.performance` and flaky under CI/parallel load; `swift test --filter`/`--skip` only support regexes, not tags, on this toolchain, so name-based regexes select them instead:
 
@@ -275,3 +277,7 @@ swift run -c release ThreadSafeKitBenchmarks --strict                           
 ```
 
 Other options: `--runs <n>` (default 5), `--threshold <percent>` (default 30), `--baseline <path>`. When a change affects performance, run the benchmark, investigate anything flagged ⚠️ SLOWER, then regenerate with `--output … --readme README.md` and commit `Benchmarks/` and the README with the change.
+
+## Contributing
+
+Mark every new public `ThreadSafe` member `@inlinable`, and make anything it touches `@usableFromInline` rather than `private`. Without that, apps call it through unspecialized generic code, which adds roughly 40–200 ns per call on top of the lock (see [Benchmarks](#benchmarks)). Nothing enforces this, so check it in review.

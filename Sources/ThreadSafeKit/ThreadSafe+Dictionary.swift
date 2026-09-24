@@ -28,30 +28,38 @@ extension Dictionary: _ThreadSafeKeyedStorage {
 
 extension ThreadSafe
 where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sendable, Value.Keys: Sendable, Value.Values: Sendable {
+    @inlinable
     public convenience init(mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: Value(), mechanism: mechanism)
     }
 
+    @inlinable
     public var dictionary: Value { read { $0 } }
 
+    @inlinable
     public var keys: Value.Keys { read { $0.keys } }
 
+    @inlinable
     public var values: Value.Values { read { $0.values } }
 
     @discardableResult
+    @inlinable
     public func removeValue(forKey key: Value.Key) -> Value.KeyedValue? {
         write { $0.removeValue(forKey: key) }
     }
 
     @discardableResult
+    @inlinable
     public func updateValue(_ value: Value.KeyedValue, forKey key: Value.Key) -> Value.KeyedValue? {
         write { $0.updateValue(value, forKey: key) }
     }
 
+    @inlinable
     public func removeAll(keepingCapacity keepCapacity: Bool = false) {
         write { $0.removeAll(keepingCapacity: keepCapacity) }
     }
 
+    @inlinable
     public func merge(
         _ other: Value,
         uniquingKeysWith combine: @Sendable (Value.KeyedValue, Value.KeyedValue) throws -> Value.KeyedValue
@@ -63,6 +71,7 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
     /// `dict[k] = v`/`dict[k] = nil` (the latter removes the key) — the write lock is held across
     /// the entire get-modify-set. `dict[k] = dict[k]! + 1` is two separate accesses and is NOT
     /// atomic; use `+=` or `mutate` for that.
+    @inlinable
     public subscript(key: Value.Key) -> Value.KeyedValue? {
         get { read { $0[key] } }
         _modify {
@@ -78,24 +87,28 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
 // `_ThreadSafeKeyedStorage` (per its doc comment) and constrained directly to the concrete `Dictionary`
 // shape instead.
 extension ThreadSafe {
+    @inlinable
     public func mapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
         _ transform: @Sendable (KeyedValue) throws -> T
     ) rethrows -> [Key: T] where Value == [Key: KeyedValue] {
         try read { try $0.mapValues(transform) }
     }
 
+    @inlinable
     public func compactMapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
         _ transform: @Sendable (KeyedValue) throws -> T?
     ) rethrows -> [Key: T] where Value == [Key: KeyedValue] {
         try read { try $0.compactMapValues(transform) }
     }
 
+    @inlinable
     public func filter<Key: Hashable & Sendable, KeyedValue: Sendable>(
         _ isIncluded: @Sendable ((key: Key, value: KeyedValue)) throws -> Bool
     ) rethrows -> [Key: KeyedValue] where Value == [Key: KeyedValue] {
         try read { try $0.filter(isIncluded) }
     }
 
+    @inlinable
     public func contains<Key: Hashable & Sendable, KeyedValue: Sendable>(
         where predicate: @Sendable ((key: Key, value: KeyedValue)) throws -> Bool
     ) rethrows -> Bool where Value == [Key: KeyedValue] {

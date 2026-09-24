@@ -1,29 +1,29 @@
 # ThreadSafeKit benchmarks
 
-Regenerate (and update the baseline): `swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md`
+Regenerate (and update the baseline and README): `swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md --readme README.md`
 
 ## Results
 
-Compared with `Benchmarks/RESULTS.json` from 2026-09-24T19:55:48Z. Percentages are the change from that run. Anything flagged moved more than 30%, beyond both runs' noise, and by more than 5 ns: investigate it before accepting the new numbers.
+Compared with `Benchmarks/RESULTS.json` from 2026-09-24T20:01:15Z. Percentages are the change from that run. Anything flagged moved more than 30%, beyond both runs' noise, and by more than 5 ns: investigate it before accepting the new numbers.
 
-| Operation                        |        Raw |       actor |        .lock | .readerWriterLock | Spread | vs. baseline |
-| -------------------------------- | ---------: | ----------: | -----------: | ----------------: | -----: | ------------ |
-| Array count                      |  4.9 (-5%) |  33.6 (-2%) |   18.2 (+5%) |        31.7 (-0%) |    ±3% | ok           |
-| Array a[i] get                   |  5.1 (+2%) |  34.1 (-3%) |   44.8 (+0%) |        58.2 (-3%) |    ±3% | ok           |
-| Array a[i] = v                   |  2.0 (-1%) |  57.2 (-2%) |   56.4 (-1%) |        69.3 (-4%) |    ±3% | ok           |
-| Array a[i] += 1                  |  2.0 (-2%) |  30.2 (-3%) |   56.3 (-3%) |        69.1 (-2%) |    ±3% | ok           |
-| Array append + popLast           |  2.5 (-0%) | 123.7 (-0%) |   91.5 (+0%) |       120.1 (+2%) |    ±4% | ok           |
-| Dictionary d[k] get              |  9.6 (+1%) |  41.0 (-2%) |   39.7 (-1%) |        53.7 (-2%) |    ±3% | ok           |
-| Dictionary d[k] = v              |  6.7 (-2%) |  75.2 (-2%) | 227.9 (-10%) |      242.3 (-12%) |    ±5% | ok           |
-| Dictionary d[k]! += 1            |  6.9 (-1%) |  35.0 (-0%) |  231.7 (-8%) |      243.2 (-11%) |    ±4% | ok           |
-| Dictionary updateValue           |  7.4 (-0%) |  75.1 (-2%) |   56.3 (-2%) |        72.0 (-0%) |    ±2% | ok           |
-| Set contains                     |  8.4 (-3%) |  37.2 (-2%) |   21.4 (-2%) |        35.0 (-2%) |    ±3% | ok           |
-| Set insert + remove              | 13.1 (+3%) | 176.5 (-6%) | 128.5 (-38%) |       165.5 (-2%) |    ±7% | ok           |
-| Scalar read                      |  1.7 (-4%) |  27.5 (-1%) |   11.2 (-2%) |        24.8 (-2%) |    ±2% | ok           |
-| Scalar mutate { += 1 }           |  1.2 (-2%) |  29.7 (-3%) |   10.0 (-2%) |        23.4 (-2%) |    ±3% | ok           |
-| Contended 90% read / 10% write   |          - | 250.4 (+0%) |   66.4 (-3%) |      1341.3 (-5%) |    ±6% | ok           |
-| Contended 100% read              |          - | 271.5 (+0%) |  104.6 (-6%) |       367.4 (+3%) |    ±6% | ok           |
-| Contended 100% write (a[i] += 1) |          - | 279.1 (-1%) |  161.5 (-2%) |      2497.5 (+6%) |    ±4% | ok           |
+| Operation                        |         Raw |        actor |       .lock | .readerWriterLock | Spread | vs. baseline                               |
+| -------------------------------- | ----------: | -----------: | ----------: | ----------------: | -----: | ------------------------------------------ |
+| Array count                      |   5.0 (+3%) |   35.3 (+5%) |  4.3 (-76%) |       20.2 (-36%) |    ±5% | FASTER: .lock -76%, .readerWriterLock -36% |
+| Array a[i] get                   |   5.1 (+0%) |   34.9 (+2%) |  4.3 (-90%) |       20.6 (-65%) |    ±3% | FASTER: .lock -90%, .readerWriterLock -65% |
+| Array a[i] = v                   |   2.0 (+1%) |   58.5 (+2%) | 30.6 (-46%) |       46.2 (-33%) |    ±1% | FASTER: .lock -46%, .readerWriterLock -33% |
+| Array a[i] += 1                  |   2.0 (+1%) |   31.1 (+3%) | 11.6 (-79%) |       27.2 (-61%) |    ±4% | FASTER: .lock -79%, .readerWriterLock -61% |
+| Array append + popLast           |   2.5 (+1%) |  124.5 (+1%) | 19.4 (-79%) |       51.5 (-57%) |    ±3% | FASTER: .lock -79%, .readerWriterLock -57% |
+| Dictionary d[k] get              |   9.9 (+3%) |   41.8 (+2%) |  8.3 (-79%) |       24.0 (-55%) |    ±2% | FASTER: .lock -79%, .readerWriterLock -55% |
+| Dictionary d[k] = v              |   7.0 (+5%) |   75.9 (+1%) | 18.8 (-92%) |       34.7 (-86%) |    ±2% | FASTER: .lock -92%, .readerWriterLock -86% |
+| Dictionary d[k]! += 1            |   7.5 (+9%) |   34.4 (-2%) | 18.4 (-92%) |       34.6 (-86%) |    ±4% | FASTER: .lock -92%, .readerWriterLock -86% |
+| Dictionary updateValue           |   7.8 (+6%) |   76.3 (+2%) | 13.9 (-75%) |       30.2 (-58%) |    ±8% | FASTER: .lock -75%, .readerWriterLock -58% |
+| Set contains                     |   8.6 (+2%) |   38.5 (+3%) |  7.2 (-66%) |       23.5 (-33%) |    ±3% | FASTER: .lock -66%, .readerWriterLock -33% |
+| Set insert + remove              | 18.1 (+38%) | 222.9 (+26%) | 37.5 (-71%) |       57.1 (-66%) |    ±1% | FASTER: .lock -71%, .readerWriterLock -66% |
+| Scalar read                      |   1.8 (+4%) |   28.0 (+2%) |  4.3 (-62%) |       19.9 (-20%) |    ±3% | FASTER: .lock -62%                         |
+| Scalar mutate { += 1 }           |   1.3 (+1%) |   30.1 (+1%) |  3.8 (-62%) |       20.0 (-15%) |    ±4% | FASTER: .lock -62%                         |
+| Contended 90% read / 10% write   |           - |  258.6 (+3%) | 44.9 (-32%) |      1330.3 (-1%) |    ±5% | FASTER: .lock -32%                         |
+| Contended 100% read              |           - |  273.3 (+1%) | 44.9 (-57%) |       338.5 (-8%) |    ±4% | FASTER: .lock -57%                         |
+| Contended 100% write (a[i] += 1) |           - |  280.7 (+1%) | 74.0 (-54%) |      2262.1 (-9%) |    ±1% | FASTER: .lock -54%                         |
 
 **0 of 16 operations flagged slower.**
 
@@ -43,7 +43,7 @@ Compared with `Benchmarks/RESULTS.json` from 2026-09-24T19:55:48Z. Percentages a
 
 | | |
 | --- | --- |
-| Date | 2026-09-24T20:01:15Z |
+| Date | 2026-09-24T20:45:27Z |
 | Machine | Mac16,6 |
 | CPU | Apple M4 Max |
 | Cores | 14 active (10 performance + 4 efficiency) |
