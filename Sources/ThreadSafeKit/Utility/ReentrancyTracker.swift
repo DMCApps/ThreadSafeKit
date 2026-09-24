@@ -2,19 +2,67 @@
 import Darwin
 #endif
 
-/// Same-thread reentrancy detection shared by both `ThreadSafe` mechanisms. Needed because neither
-/// backing lock self-detects recursion reliably: `os_unfair_lock` traps on same-thread relock, but
-/// `pthread_rwlock` doesn't — Darwin returns `EDEADLK` for some combinations, but read-in-read
+/// Same-thread reentrancy detection for `ThreadSafe`'s `.readerWriterLock` mechanism
+/// (`ThreadSafe.swift`). `.lock` doesn't use this at all — `os_unfair_lock` already traps on a
+/// same-thread relock, so tracking would be pure overhead there. `pthread_rwlock` doesn't
+/// self-detect reliably: Darwin returns `EDEADLK` for some combinations, but read-in-read
 /// succeeds and then deadlocks the moment a writer queues between the two reads. Detecting
-/// reentrancy explicitly, ahead of the acquire, gives one consistent trap across both mechanisms
-/// instead of a mechanism-dependent trap-or-hang.
+/// reentrancy explicitly, ahead of the acquire, gives a deterministic trap instead of that hang.
 ///
 /// Tracks, per OS thread, which instances that thread currently holds a read/write/modify access
-/// to, and traps *before* attempting to acquire a lock the thread already holds — the whole
+/// to, and traps *before* attempting to acquire the rwlock a thread already holds — the whole
 /// point is avoiding a hang, so the check has to happen ahead of the acquire, not after.
+///
+/// Storage is an inline fixed-capacity buffer scanned linearly, not a `Set`: nesting depth (how
+/// many *distinct* instances a thread has active at once, e.g. `a.mutate { b.mutate { ... } }`)
+/// is almost always 0 or 1, occasionally a handful — small enough that a linear scan beats
+/// hashing, and small enough to size inline with zero heap allocation in the common case. A
+/// thread that nests deeper than the inline capacity falls back to a heap array; that thread's
+/// `Box` (allocated once, lazily, and reused for the rest of the thread's life) is the only
+/// per-thread state, so this fallback allocates at most once per thread, not once per access.
 enum ReentrancyTracker {
     private final class Box {
-        var active: Set<ObjectIdentifier> = []
+        static let inlineCapacity = 4
+
+        private let slots: UnsafeMutablePointer<ObjectIdentifier?>
+        private var slotCount = 0
+        private var overflow: [ObjectIdentifier] = []
+
+        init() {
+            slots = .allocate(capacity: Self.inlineCapacity)
+            slots.initialize(repeating: nil, count: Self.inlineCapacity)
+        }
+
+        deinit {
+            slots.deinitialize(count: Self.inlineCapacity)
+            slots.deallocate()
+        }
+
+        func contains(_ id: ObjectIdentifier) -> Bool {
+            for i in 0..<slotCount where slots[i] == id { return true }
+            return !overflow.isEmpty && overflow.contains(id)
+        }
+
+        func insert(_ id: ObjectIdentifier) {
+            if slotCount < Self.inlineCapacity {
+                slots[slotCount] = id
+                slotCount += 1
+            } else {
+                overflow.append(id)
+            }
+        }
+
+        func remove(_ id: ObjectIdentifier) {
+            for i in 0..<slotCount where slots[i] == id {
+                slotCount -= 1
+                slots[i] = slots[slotCount]
+                slots[slotCount] = nil
+                return
+            }
+            if let index = overflow.firstIndex(of: id) {
+                overflow.remove(at: index)
+            }
+        }
     }
 
     private static let key: pthread_key_t = {
@@ -39,12 +87,12 @@ enum ReentrancyTracker {
     static func beginAccess(_ instance: AnyObject) -> Bool {
         let box = currentBox()
         let id = ObjectIdentifier(instance)
-        guard !box.active.contains(id) else { return false }
-        box.active.insert(id)
+        guard !box.contains(id) else { return false }
+        box.insert(id)
         return true
     }
 
     static func endAccess(_ instance: AnyObject) {
-        currentBox().active.remove(ObjectIdentifier(instance))
+        currentBox().remove(ObjectIdentifier(instance))
     }
 }

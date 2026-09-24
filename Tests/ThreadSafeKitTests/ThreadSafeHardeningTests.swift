@@ -380,6 +380,107 @@ func reentrantModifyInsideModifyAbortsOnReaderWriterLock() async {
     }
 }
 
+// Reentry exit tests for the dictionary- and set-shaped extensions (ThreadSafe+Dictionary.swift,
+// ThreadSafe+Set.swift), under `.readerWriterLock` only — the existing reentrancy coverage above
+// is array-only, and the tracker doesn't know or care about `Value`'s shape, but this closes the
+// gap on the record.
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideWriteAbortsOnReaderWriterLock_Dictionary() async {
+    await #expect(processExitsWith: .failure) {
+        let dict = ThreadSafe(["a": 1], mechanism: .readerWriterLock)
+        dict.mutate { _ in
+            dict.setValue(2, forKey: "b")
+        }
+    }
+}
+
+@Test(.timeLimit(.minutes(1)))
+func reentrantWriteInsideWriteAbortsOnReaderWriterLock_Set() async {
+    await #expect(processExitsWith: .failure) {
+        let set = ThreadSafe<Set<Int>>([1, 2, 3], mechanism: .readerWriterLock)
+        set.mutate { _ in
+            _ = set.insert(4)
+        }
+    }
+}
+#endif
+
+// MARK: - Reentrancy: nesting distinct instances (must never trap)
+
+// Nesting *different* instances on the same thread must succeed regardless of how deep — even
+// deeper than ReentrancyTracker's inline buffer capacity (4), which forces its heap-array
+// overflow path. Covers both mechanisms: `.lock` never tracks at all, `.readerWriterLock` tracks
+// via `ReentrancyTracker`, and neither should trap here.
+@Test(arguments: mechanisms)
+func nestingManyDistinctInstancesOnSameThreadNeverTraps(mechanism: ThreadSafeMechanism) {
+    let counters = (0..<6).map { _ in ThreadSafe(0, mechanism: mechanism) }
+
+    @Sendable func nest(_ index: Int) {
+        guard index < counters.count else { return }
+        counters[index].mutate { value in
+            value += 1
+            nest(index + 1)
+        }
+    }
+    nest(0)
+
+    for counter in counters {
+        #expect(counter.wrappedValue == 1)
+    }
+}
+
+// A body throwing partway through a nested access must not leave a stale tracker entry behind —
+// the next access to either instance must succeed, not falsely trap. `.readerWriterLock` only:
+// `.lock` never touches the tracker, so it has nothing to clean up here.
+@Test
+func nestedThrowLeavesNoStaleTrackerEntryOnReaderWriterLock() {
+    let outer = ThreadSafe(0, mechanism: .readerWriterLock)
+    let inner = ThreadSafe(0, mechanism: .readerWriterLock)
+
+    #expect(throws: Boom.self) {
+        try outer.mutate { _ in
+            try inner.mutate { _ in
+                throw Boom()
+            }
+        }
+    }
+
+    outer.mutate { $0 += 1 }
+    inner.mutate { $0 += 1 }
+    #expect(outer.wrappedValue == 1)
+    #expect(inner.wrappedValue == 1)
+}
+
+// Many threads, each nesting 2-3 distinct instances, under `.readerWriterLock`: no false traps,
+// no deadlocks, and every increment lands — the tracker's per-thread state must never leak or
+// collide across threads under real contention.
+@Test(.timeLimit(.minutes(1)))
+func concurrentNestingOfDifferentInstancesNeverFalseTrapsOnReaderWriterLock() {
+    let a = ThreadSafe(0, mechanism: .readerWriterLock)
+    let b = ThreadSafe(0, mechanism: .readerWriterLock)
+    let c = ThreadSafe(0, mechanism: .readerWriterLock)
+    let perThread = 2000
+
+    DispatchQueue.concurrentPerform(iterations: 8) { _ in
+        for _ in 0..<perThread {
+            a.mutate { aValue in
+                aValue += 1
+                b.mutate { bValue in
+                    bValue += 1
+                    c.mutate { cValue in
+                        cValue += 1
+                    }
+                }
+            }
+        }
+    }
+
+    #expect(a.wrappedValue == 8 * perThread)
+    #expect(b.wrappedValue == 8 * perThread)
+    #expect(c.wrappedValue == 8 * perThread)
+}
+
+#if os(macOS)
 // MARK: - Subscript bounds checking
 
 // An out-of-bounds index traps via `Array`'s own bounds check, for both the `get` and the

@@ -88,6 +88,49 @@ func trackingIsPerThreadNotGlobal() {
     ReentrancyTracker.endAccess(probe)
 }
 
+// `Box`'s inline capacity is 4 — nest more than that on one thread to force the heap-array
+// overflow path, and confirm it behaves identically to the inline path: every `beginAccess`
+// succeeds while nested, and unwinding in the same order frees each one for reuse.
+@Test
+func nestingBeyondInlineCapacitySucceedsAndUnwindsCleanly() {
+    let probes = (0..<9).map { _ in Probe() }
+
+    for probe in probes {
+        #expect(ReentrancyTracker.beginAccess(probe), "distinct instances nesting on the same thread must never trap")
+    }
+    for probe in probes {
+        #expect(!ReentrancyTracker.beginAccess(probe), "each nested probe is still active until its own endAccess runs")
+    }
+    for probe in probes.reversed() {
+        ReentrancyTracker.endAccess(probe)
+    }
+    for probe in probes {
+        #expect(ReentrancyTracker.beginAccess(probe), "beginAccess must succeed again once every nested instance has been unwound")
+        ReentrancyTracker.endAccess(probe)
+    }
+}
+
+// Removing an instance that overflowed into the heap array, while other overflowed instances
+// are still active, must only clear that one instance — exercises `Box.remove`'s overflow branch
+// specifically (as opposed to the inline-slot branch already covered by
+// `endAccessOnlyClearsTheGivenInstance`).
+@Test
+func removingOneOverflowedInstanceLeavesOthersActive() {
+    let probes = (0..<6).map { _ in Probe() } // capacity is 4, so probes[4...] overflow
+    for probe in probes {
+        #expect(ReentrancyTracker.beginAccess(probe))
+    }
+
+    ReentrancyTracker.endAccess(probes[4])
+
+    #expect(ReentrancyTracker.beginAccess(probes[4]), "removing one overflowed instance must free it")
+    #expect(!ReentrancyTracker.beginAccess(probes[5]), "removing probes[4] must not affect probes[5], the other overflowed instance")
+
+    for probe in probes {
+        ReentrancyTracker.endAccess(probe)
+    }
+}
+
 // Many distinct instances, all concurrently active on many distinct threads, must never
 // false-positive against each other — only true same-thread/same-instance reentry should fail.
 @Test(.timeLimit(.minutes(1)))
