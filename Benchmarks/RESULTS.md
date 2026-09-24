@@ -14,7 +14,7 @@ Compared with `Benchmarks/RESULTS.json` from 2026-09-24T20:45:27Z. Percentages a
 | Array a[i] += 1                          |   2.0 (-1%) |   30.7 (-1%) |  11.7 (+1%) |        27.7 (+2%) |    ±4% | ok           |
 | Array append + popLast                   |   2.5 (+1%) |  124.1 (-0%) |  19.5 (+1%) |        50.6 (-2%) |    ±4% | ok           |
 | Array elements snapshot                  |         5.1 |         31.0 |         7.8 |              24.0 |    ±6% | new          |
-| Array contains(where:)                   |        21.6 |       2604.3 |        24.0 |              40.2 |    ±5% | new          |
+| Array contains(where:)                   |        21.6 |      2,604.3 |        24.0 |              40.2 |    ±5% | new          |
 | Dictionary d[k] get                      |   9.6 (-3%) |   40.5 (-3%) |   8.1 (-2%) |        24.5 (+2%) |    ±5% | ok           |
 | Dictionary d[k] = v                      |   7.1 (+0%) |   73.7 (-3%) |  18.2 (-3%) |        34.3 (-1%) |    ±3% | ok           |
 | Dictionary d[k]! += 1                    |  6.2 (-18%) |   33.5 (-3%) |  16.8 (-9%) |        32.5 (-6%) |    ±4% | ok           |
@@ -24,11 +24,11 @@ Compared with `Benchmarks/RESULTS.json` from 2026-09-24T20:45:27Z. Percentages a
 | Set insert + remove                      | 27.9 (+54%) | 162.7 (-27%) | 27.2 (-27%) |        60.9 (+7%) |    ±6% | ok           |
 | Scalar read                              |   1.8 (+0%) |   27.1 (-4%) |   4.2 (-1%) |        20.1 (+1%) |    ±6% | ok           |
 | Scalar mutate { += 1 }                   |   1.2 (-1%) |   28.8 (-4%) |   4.0 (+6%) |        19.6 (-2%) |    ±6% | ok           |
-| Contended 90% read / 10% write           |           - |  253.6 (-2%) |  46.5 (+4%) |      1447.9 (+9%) |    ±6% | ok           |
+| Contended 90% read / 10% write           |           - |  253.6 (-2%) |  46.5 (+4%) |     1,447.9 (+9%) |    ±6% | ok           |
 | Contended 100% read                      |           - |  269.7 (-1%) |  43.7 (-3%) |       328.2 (-3%) |    ±4% | ok           |
-| Contended 100% write (a[i] += 1)         |           - |  271.7 (-3%) |  77.5 (+5%) |      2315.9 (+2%) |    ±6% | ok           |
-| Contended long read (count(where:), 10k) |           - |     419092.8 |      8974.5 |            1048.7 |    ±5% | new          |
-| Contended long read + 10% write          |           - |     380110.9 |     12344.5 |            2846.0 |   ±10% | new          |
+| Contended 100% write (a[i] += 1)         |           - |  271.7 (-3%) |  77.5 (+5%) |     2,315.9 (+2%) |    ±6% | ok           |
+| Contended long read (count(where:), 10k) |           - |    419,092.8 |     8,974.5 |           1,048.7 |    ±5% | new          |
+| Contended long read + 10% write          |           - |    380,110.9 |    12,344.5 |           2,846.0 |   ±10% | new          |
 
 **0 of 21 operations flagged slower.**
 

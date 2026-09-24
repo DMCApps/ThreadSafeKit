@@ -222,7 +222,8 @@ func markdownTable(_ rows: [Row], baseline: [String: Row]?, thresholdPercent: Do
     let headers = ["Operation", "Raw", "actor", ".lock", ".readerWriterLock", "Spread"] + (baseline == nil ? [] : ["vs. baseline"])
     func cell(_ value: Double?, _ previous: Double?) -> String {
         guard let value else { return "-" }
-        let figure = String(format: "%.1f", value)
+        // Fixed locale so the committed tables don't depend on the machine's region settings.
+        let figure = value.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "en_US")))
         guard let previous, previous > 0 else { return figure }
         return figure + " (" + String(format: "%+.0f%%", percentChange(value, from: previous)) + ")"
     }
