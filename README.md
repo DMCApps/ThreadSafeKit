@@ -2,6 +2,8 @@
 
 Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendable`, so mutable state passes across isolation domains without data races, no manual locking at call site.
 
+**Latest benchmarks:** [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md): per-operation cost of each type and mechanism against the raw stdlib type, with the system they were measured on.
+
 ## Requirements
 
 - Swift 6.3+ tools, `swiftLanguageModes: [.v6]`
@@ -81,7 +83,7 @@ if let i = list.firstIndex(of: x) {
 list.removeAll(where: { $0 == x })
 ```
 
-`mutate(_:)` holds the lock/queue/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
+`mutate(_:)` holds the lock/actor across the whole closure, so a multi-step read-then-write is atomic as one unit:
 
 ```swift
 await dict.mutate { storage in
@@ -110,7 +112,7 @@ let nextID = await idGenerator.mutate { value in
 
 **Don't call back into the same instance, and don't nest two instances in opposite orders.** Inside a `mutate` (or `forEach`/`map`/`removeAll(where:)`/… closure), touching the *same* `ThreadSafe` instance traps immediately. Nesting a *different* instance works (`a.mutate { _ in b.mutate { … } }`), but if one thread nests `a` → `b` while another nests `b` → `a`, each holds one lock and waits for the other, and both hang forever with no trap. Avoid nesting different instances; if you must, always nest them in the same order, or snapshot one first (`let bValue = b.wrappedValue`) and then `mutate` the other. The actor types can't deadlock this way: their `mutate` closure is synchronous, so it can't `await` another actor.
 
-**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
+**What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
 ### Codable and Equatable
 
@@ -154,6 +156,17 @@ Shape-specific members mirror the standard library's own `Array`/`Dictionary`/`S
 One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mechanism via `ThreadSafeMechanism` (default `.readerWriterLock`): `.readerWriterLock` (`pthread_rwlock_t`, locked manually — concurrent reads, exclusive writes) or `.lock` (`OSAllocatedUnfairLock`, every access fully exclusive — reads included). `ThreadSafe<Value>` itself is `@unchecked Sendable` regardless of which mechanism you pick — the choice is a runtime backing detail, not a type-level distinction, and safety is enforced internally (locking) rather than by the compiler either way.
 
 Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — see "Subscripts are atomic" below.
+
+### Why not `DispatchQueue`?
+
+A concurrent `DispatchQueue` with barrier writes is the classic reader-writer pattern, and `ThreadSafe` used it originally. It was removed because it can't support the subscript semantics this library promises:
+
+- **Atomic in-place edits need a lock that can be held across a `yield`.** `ts[i] += 1` and `dict[k]?.append(x)` run through a `_modify` accessor, which holds exclusive access while the caller's code edits the value in place. GCD only provides exclusivity *inside* a `queue.sync { }` closure, and you can't `yield` out of a closure. With a queue, those edits split into a separate read and write, which loses updates under concurrency.
+- **The only queue-based workaround is slow and fragile.** "Parking" the queue (an async barrier block that waits on a semaphore until the edit finishes) measured ~6 µs per compound edit, ties up a GCD worker thread for each one, and can stall the main thread behind a low-priority worker, since semaphores don't boost priority.
+- **It's slower even without that.** A queue hop measured ~150-250 ns per plain read or write, against a few ns for a bare lock.
+- **Reentrancy could deadlock silently.** A read nested inside another read (e.g. `ts.count` inside `ts.forEach { }`) hung forever as soon as a writer queued between them, instead of trapping.
+
+`.lock` and `.readerWriterLock` lock and unlock manually, so a subscript's in-place edit holds the lock for exactly the access, and same-instance reentry traps immediately. See [Benchmarks](#benchmarks) for current per-operation costs.
 
 `Value`'s shape determines which members are available, added via constrained extensions:
 
@@ -201,7 +214,36 @@ When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of me
 
 All mutation goes through `mutate(_:)` (or dedicated methods like `append`/`updateValue`) — direct assignment to `wrappedValue`/`value` is unavailable, since read-modify-write isn't atomic across two separate lock acquisitions.
 
-`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/queue/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
+`wrappedValue`/`elements`/`dictionary` (and the actor equivalents) are snapshot reads, safe for value-type `Value`s (`Array`/`Dictionary`/`Set`/`String`/scalars) — mutating the returned snapshot only mutates your local copy, not the shared instance. If `Value` is a reference type instead, the accessor hands back the same instance, not a copy, so mutating through it bypasses the lock/actor entirely and races with any other access. `ThreadSafe`/the actors only make value-type payloads safe this way; wrapping a reference type still requires not mutating it outside `mutate(_:)`.
+
+## Benchmarks
+
+Per-operation cost of each type and mechanism against the raw stdlib type. The table below is regenerated by the benchmark tool (see [Testing](#testing)); [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md) has the full legend, run-to-run comparison, and system details.
+
+<!-- BENCHMARKS:START -->
+<!-- Generated by ThreadSafeKitBenchmarks (--readme); edits between these markers are overwritten. -->
+
+| Operation                        |  Raw | actor | .lock | .readerWriterLock | Spread |
+| -------------------------------- | ---: | ----: | ----: | ----------------: | -----: |
+| Array count                      |  4.9 |  33.6 |  18.2 |              31.7 |    ±3% |
+| Array a[i] get                   |  5.1 |  34.1 |  44.8 |              58.2 |    ±3% |
+| Array a[i] = v                   |  2.0 |  57.2 |  56.4 |              69.3 |    ±3% |
+| Array a[i] += 1                  |  2.0 |  30.2 |  56.3 |              69.1 |    ±3% |
+| Array append + popLast           |  2.5 | 123.7 |  91.5 |             120.1 |    ±4% |
+| Dictionary d[k] get              |  9.6 |  41.0 |  39.7 |              53.7 |    ±3% |
+| Dictionary d[k] = v              |  6.7 |  75.2 | 227.9 |             242.3 |    ±5% |
+| Dictionary d[k]! += 1            |  6.9 |  35.0 | 231.7 |             243.2 |    ±4% |
+| Dictionary updateValue           |  7.4 |  75.1 |  56.3 |              72.0 |    ±2% |
+| Set contains                     |  8.4 |  37.2 |  21.4 |              35.0 |    ±3% |
+| Set insert + remove              | 13.1 | 176.5 | 128.5 |             165.5 |    ±7% |
+| Scalar read                      |  1.7 |  27.5 |  11.2 |              24.8 |    ±2% |
+| Scalar mutate { += 1 }           |  1.2 |  29.7 |  10.0 |              23.4 |    ±3% |
+| Contended 90% read / 10% write   |    - | 250.4 |  66.4 |            1341.3 |    ±6% |
+| Contended 100% read              |    - | 271.5 | 104.6 |             367.4 |    ±6% |
+| Contended 100% write (a[i] += 1) |    - | 279.1 | 161.5 |            2497.5 |    ±4% |
+
+Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is the unsynchronized stdlib type on one thread; **actor** is the actor type (`ThreadSafeArray`/…); **.lock** / **.readerWriterLock** are `ThreadSafe<Value>` with that mechanism; **Spread** is run-to-run variation. Contended rows are 8 concurrent workers on one instance (no Raw figure: that would be a data race). Measured on Apple M4 Max (Mac16,6), macOS Version 26.6.2 (Build 25G83), 2026-09-24T20:01:15Z. Numbers are only comparable on the same machine. Full legend and baseline comparison: [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md).
+<!-- BENCHMARKS:END -->
 
 ## Testing
 
@@ -223,3 +265,13 @@ swift test --filter 'Fast|Bounded|CostDoesNotScaleWithCollectionSize' # performa
 ```
 
 New performance tests must be tagged `.performance` **and** named to end in `Fast`, `Bounded`, or `CostDoesNotScaleWithCollectionSize`, or these commands will misclassify them.
+
+The performance tests are regression guards, not measurements — `swift test` builds debug and runs tests in parallel. For real per-operation numbers, run the release-mode benchmark. It prints a table of ns/op for each operation on the raw stdlib type, the actor type, and `ThreadSafe` under `.lock` and `.readerWriterLock` (single-thread and 8-way contended). Each figure is the median of several whole-suite runs, and each run is compared against the committed baseline ([Benchmarks/RESULTS.md](Benchmarks/RESULTS.md), with its raw numbers in `Benchmarks/RESULTS.json`). A change is flagged only if it's larger than the threshold and the runs' own noise, and only when the baseline came from the same machine. The legend under the table explains every column.
+
+```
+swift run -c release ThreadSafeKitBenchmarks                                    # compare against the baseline
+swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md --readme README.md   # also write RESULTS.md + RESULTS.json (new baseline) and the README table
+swift run -c release ThreadSafeKitBenchmarks --strict                           # exit 1 if anything is flagged slower
+```
+
+Other options: `--runs <n>` (default 5), `--threshold <percent>` (default 30), `--baseline <path>`. When a change affects performance, run the benchmark, investigate anything flagged ⚠️ SLOWER, then regenerate with `--output … --readme README.md` and commit `Benchmarks/` and the README with the change.

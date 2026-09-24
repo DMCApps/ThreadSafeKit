@@ -1,0 +1,155 @@
+{
+  "rows": [
+    {
+      "actor": 33.56042,
+      "contended": false,
+      "lock": 18.236166,
+      "operation": "Array count",
+      "raw": 4.8965,
+      "readerWriterLock": 31.663584,
+      "spreadPercent": 5.41642360570747
+    },
+    {
+      "actor": 34.11208,
+      "contended": false,
+      "lock": 44.802916,
+      "operation": "Array a[i] get",
+      "raw": 5.069834,
+      "readerWriterLock": 58.187334,
+      "spreadPercent": 5.299324713596763
+    },
+    {
+      "actor": 57.24375,
+      "contended": false,
+      "lock": 56.39,
+      "operation": "Array a[i] = v",
+      "raw": 1.9785,
+      "readerWriterLock": 69.258668,
+      "spreadPercent": 6.3942667797191834
+    },
+    {
+      "actor": 30.2175,
+      "contended": false,
+      "lock": 56.299334,
+      "operation": "Array a[i] += 1",
+      "raw": 1.978416,
+      "readerWriterLock": 69.131334,
+      "spreadPercent": 6.2063704806817315
+    },
+    {
+      "actor": 123.67209,
+      "contended": false,
+      "lock": 91.472,
+      "operation": "Array append + popLast",
+      "raw": 2.473334,
+      "readerWriterLock": 120.142416,
+      "spreadPercent": 8.97770062752234
+    },
+    {
+      "actor": 41.03458,
+      "contended": false,
+      "lock": 39.656334,
+      "operation": "Dictionary d[k] get",
+      "raw": 9.648168,
+      "readerWriterLock": 53.698916,
+      "spreadPercent": 6.285665058862645
+    },
+    {
+      "actor": 75.225,
+      "contended": false,
+      "lock": 227.917584,
+      "operation": "Dictionary d[k] = v",
+      "raw": 6.680084,
+      "readerWriterLock": 242.2515,
+      "spreadPercent": 9.73100258907623
+    },
+    {
+      "actor": 34.9725,
+      "contended": false,
+      "lock": 231.722416,
+      "operation": "Dictionary d[k]! += 1",
+      "raw": 6.924084,
+      "readerWriterLock": 243.157334,
+      "spreadPercent": 8.701503440219607
+    },
+    {
+      "actor": 75.07917,
+      "contended": false,
+      "lock": 56.328668,
+      "operation": "Dictionary updateValue",
+      "raw": 7.429082,
+      "readerWriterLock": 71.978582,
+      "spreadPercent": 3.042455045863519
+    },
+    {
+      "actor": 37.23166,
+      "contended": false,
+      "lock": 21.386582,
+      "operation": "Set contains",
+      "raw": 8.413082,
+      "readerWriterLock": 34.998,
+      "spreadPercent": 6.443870619789703
+    },
+    {
+      "actor": 176.46875,
+      "contended": false,
+      "lock": 128.505916,
+      "operation": "Set insert + remove",
+      "raw": 13.114416,
+      "readerWriterLock": 165.496834,
+      "spreadPercent": 13.434206406497282
+    },
+    {
+      "actor": 27.53083,
+      "contended": false,
+      "lock": 11.201416,
+      "operation": "Scalar read",
+      "raw": 1.687332,
+      "readerWriterLock": 24.8345,
+      "spreadPercent": 3.7569714400393597
+    },
+    {
+      "actor": 29.70834,
+      "contended": false,
+      "lock": 9.988082,
+      "operation": "Scalar mutate { += 1 }",
+      "raw": 1.2365,
+      "readerWriterLock": 23.38175,
+      "spreadPercent": 5.16281304058176
+    },
+    {
+      "actor": 250.3828125,
+      "contended": true,
+      "lock": 66.4446875,
+      "operation": "Contended 90% read / 10% write",
+      "readerWriterLock": 1341.26921875,
+      "spreadPercent": 11.813911147358915
+    },
+    {
+      "actor": 271.4671875,
+      "contended": true,
+      "lock": 104.623125,
+      "operation": "Contended 100% read",
+      "readerWriterLock": 367.3984375,
+      "spreadPercent": 11.07542232889563
+    },
+    {
+      "actor": 279.0828125,
+      "contended": true,
+      "lock": 161.49291625,
+      "operation": "Contended 100% write (a[i] += 1)",
+      "readerWriterLock": 2497.48385375,
+      "spreadPercent": 7.797781656568474
+    }
+  ],
+  "runs": 5,
+  "system": {
+    "compiler": "Swift 6.3, release build",
+    "cores": "14 active (10 performance + 4 efficiency)",
+    "cpu": "Apple M4 Max",
+    "date": "2026-09-24T20:01:15Z",
+    "machine": "Mac16,6",
+    "memory": "36 GB",
+    "os": "macOS Version 26.6.2 (Build 25G83)"
+  }
+}
