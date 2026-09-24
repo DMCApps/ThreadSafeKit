@@ -28,20 +28,24 @@ One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mech
 | `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()` |
 | `MutableCollection` | + `subscript(index:)`* (get/set) |
 | Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `removeAll`, `merge`, `subscript(key:)`, init with no initial value |
+| `SetAlgebra` (e.g. `Set`) | `contains(_:)`, `insert(_:)`, `remove(_:)`, `removeAll`, init with no initial value |
 
 \* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
 
-`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` and `ThreadSafe<Set<Int>>` both get `Collection` members (e.g. `ThreadSafe("hello").count == 5`).
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
 
-Alongside `ThreadSafe<Value>`, three real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, and `ThreadSafeAtomic<Value>`:
+Both `RangeReplaceableCollection` and `SetAlgebra` only cover the common ergonomic gaps, not their full stdlib surface — for anything else (`union`, `intersection`, `filter`, etc.), drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
+
+Alongside `ThreadSafe<Value>`, four real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, `ThreadSafeSet<Element>`, and `ThreadSafeAtomic<Value>`:
 
 | Kind | `ThreadSafe` (sync) | Actor (async) |
 |---|---|---|
 | Single value | `ThreadSafe<Value>` (property wrapper) | `ThreadSafeAtomic<Value>` |
 | Array | `ThreadSafe<[Element]>` (also usable as a property wrapper) | `ThreadSafeArray<Element>` |
 | Dictionary | `ThreadSafe<[Key: Value]>` (also usable as a property wrapper) | `ThreadSafeDictionary<Key, Value>` |
+| Set | `ThreadSafe<Set<Element>>` (also usable as a property wrapper) | `ThreadSafeSet<Element>` |
 
-**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/atomic names belong exclusively to the actors.
+**Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/set/atomic names belong exclusively to the actors.
 
 When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a `.dispatchQueue`-backed instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
 
@@ -122,7 +126,7 @@ Not `Hashable` — see above: a member's hash must never change while it's in a 
 `Hashable` to its own conformance list either, for the same reason (its `items` field is still a
 mutable reference under the hood, `let` only stops reassignment, not mutation through it).
 
-Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
+Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`, `ThreadSafeAtomic`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
 
 ```swift
 let snapshot = await list.elements
@@ -133,7 +137,7 @@ let restored = ThreadSafeArray(try JSONDecoder().decode([Int].self, from: data))
 await list.elements == (await otherList.elements)   // compare the plain snapshots
 ```
 
-This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `ThreadSafeArray<Element>`/`ThreadSafeDictionary<Key, Value>`/`ThreadSafeAtomic<Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
+This also rules out `@MainActor`-style isolated conformances: that mechanism ties a conformance to one specific *global* actor, checked statically. `ThreadSafeArray<Element>`/`ThreadSafeDictionary<Key, Value>`/`ThreadSafeSet<Element>`/`ThreadSafeAtomic<Value>` are plain `actor` types — each instance is its own isolation domain, so there's no single actor to name, and it wouldn't remove the `await` for a caller outside the isolated instance anyway.
 
 ## Testing
 
