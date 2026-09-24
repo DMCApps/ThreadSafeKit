@@ -27,6 +27,12 @@ let package = Package(
             name: "ThreadSafeKitTests",
             dependencies: ["ThreadSafeKit"]
         ),
+        // Release-mode per-operation benchmarks: `swift run -c release ThreadSafeKitBenchmarks`.
+        // Not a product, so packages depending on ThreadSafeKit never build it.
+        .executableTarget(
+            name: "ThreadSafeKitBenchmarks",
+            dependencies: ["ThreadSafeKit"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

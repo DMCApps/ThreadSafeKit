@@ -2,6 +2,8 @@
 
 Thread-safe wrapper types for Swift 6+ strict concurrency. Each type is `Sendable`, so mutable state passes across isolation domains without data races, no manual locking at call site.
 
+**Latest benchmarks:** [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md): per-operation cost of each type and mechanism against the raw stdlib type, with the system they were measured on.
+
 ## Requirements
 
 - Swift 6.3+ tools, `swiftLanguageModes: [.v6]`
@@ -223,3 +225,13 @@ swift test --filter 'Fast|Bounded|CostDoesNotScaleWithCollectionSize' # performa
 ```
 
 New performance tests must be tagged `.performance` **and** named to end in `Fast`, `Bounded`, or `CostDoesNotScaleWithCollectionSize`, or these commands will misclassify them.
+
+The performance tests are regression guards, not measurements — `swift test` builds debug and runs tests in parallel. For real per-operation numbers, run the release-mode benchmark. It prints a table of ns/op for each operation on the raw stdlib type, the actor type, and `ThreadSafe` under `.lock` and `.readerWriterLock` (single-thread and 8-way contended), with PASS/FAIL against overhead budgets relative to the raw type (criteria are printed below the table and defined at the top of `Sources/ThreadSafeKitBenchmarks/main.swift`). The latest committed run is in [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md), including the system it ran on:
+
+```
+swift run -c release ThreadSafeKitBenchmarks                                    # print only
+swift run -c release ThreadSafeKitBenchmarks --output Benchmarks/RESULTS.md     # also update the committed results
+swift run -c release ThreadSafeKitBenchmarks --strict                           # exit 1 if any row FAILs
+```
+
+Regenerate `Benchmarks/RESULTS.md` when a change affects performance, and commit it with that change.
