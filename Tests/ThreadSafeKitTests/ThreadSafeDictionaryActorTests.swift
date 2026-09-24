@@ -43,6 +43,40 @@ import Testing
     #expect(await dictionary.dictionary == ["a": 2, "b": 3])
 }
 
+@Test func dictionaryActorUpdateValue() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1])
+    #expect(await dictionary.updateValue(2, forKey: "a") == 1)
+    #expect(await dictionary.updateValue(3, forKey: "b") == nil)
+    #expect(await dictionary.dictionary == ["a": 2, "b": 3])
+}
+
+@Test func dictionaryActorKeysAndValues() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await Set(dictionary.keys) == ["a", "b"])
+    #expect(await Set(dictionary.values) == [1, 2])
+}
+
+@Test func dictionaryActorMapValues() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await dictionary.mapValues { $0 * 10 } == ["a": 10, "b": 20])
+}
+
+@Test func dictionaryActorCompactMapValues() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await dictionary.compactMapValues { $0 == 1 ? nil : $0 } == ["b": 2])
+}
+
+@Test func dictionaryActorFilter() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await dictionary.filter { $0.value > 1 } == ["b": 2])
+}
+
+@Test func dictionaryActorContainsWhere() async throws {
+    let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
+    #expect(await dictionary.contains { $0.value == 2 })
+    #expect(await dictionary.contains { $0.value == 3 } == false)
+}
+
 @Test func dictionaryActorForEach() async throws {
     let dictionary = ThreadSafeDictionary(["a": 1, "b": 2])
     let sum = ThreadSafe(wrappedValue: 0)

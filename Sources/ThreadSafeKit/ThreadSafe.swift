@@ -85,6 +85,10 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
+    // If `Value` is a reference type, this (and `elements`/`dictionary`/other shape-specific
+    // snapshot accessors) return the same instance, not a copy — mutating through it bypasses
+    // the lock/queue entirely. Only value-type `Value`s (Array/Dictionary/Set/String/scalars)
+    // get real safety from these accessors.
     public var wrappedValue: Value {
         get { read { $0 } }
         @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use $name's mutate/etc. instead")

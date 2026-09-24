@@ -41,8 +41,61 @@ public actor ThreadSafeSet<Element: Hashable & Sendable> {
         storage.remove(member)
     }
 
+    @discardableResult
+    public func update(with newMember: Element) -> Element? {
+        storage.update(with: newMember)
+    }
+
     public func removeAll(keepingCapacity keepCapacity: Bool = false) {
         storage.removeAll(keepingCapacity: keepCapacity)
+    }
+
+    public func union(_ other: Set<Element>) -> Set<Element> {
+        storage.union(other)
+    }
+
+    public func intersection(_ other: Set<Element>) -> Set<Element> {
+        storage.intersection(other)
+    }
+
+    public func symmetricDifference(_ other: Set<Element>) -> Set<Element> {
+        storage.symmetricDifference(other)
+    }
+
+    public func formUnion(_ other: Set<Element>) {
+        storage.formUnion(other)
+    }
+
+    public func formIntersection(_ other: Set<Element>) {
+        storage.formIntersection(other)
+    }
+
+    public func subtract(_ other: Set<Element>) {
+        storage.subtract(other)
+    }
+
+    public func formSymmetricDifference(_ other: Set<Element>) {
+        storage.formSymmetricDifference(other)
+    }
+
+    public func isSubset(of other: Set<Element>) -> Bool {
+        storage.isSubset(of: other)
+    }
+
+    public func isSuperset(of other: Set<Element>) -> Bool {
+        storage.isSuperset(of: other)
+    }
+
+    public func isDisjoint(with other: Set<Element>) -> Bool {
+        storage.isDisjoint(with: other)
+    }
+
+    public func isStrictSubset(of other: Set<Element>) -> Bool {
+        storage.isStrictSubset(of: other)
+    }
+
+    public func isStrictSuperset(of other: Set<Element>) -> Bool {
+        storage.isStrictSuperset(of: other)
     }
 
     public func forEach(_ body: @Sendable (Element) throws -> Void) rethrows {

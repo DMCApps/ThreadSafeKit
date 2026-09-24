@@ -49,6 +49,56 @@ import Testing
     #expect(await set.isEmpty)
 }
 
+@Test func setActorUpdateWith() async throws {
+    let set = ThreadSafeSet([1, 2])
+    #expect(await set.update(with: 1) == 1)
+    #expect(await set.update(with: 3) == nil)
+    #expect(await set.elements == [1, 2, 3])
+}
+
+@Test func setActorUnionIntersectionSymmetricDifference() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    #expect(await set.union([3, 4]) == [1, 2, 3, 4])
+    #expect(await set.intersection([2, 3, 4]) == [2, 3])
+    #expect(await set.symmetricDifference([2, 3, 4]) == [1, 4])
+    #expect(await set.elements == [1, 2, 3])
+}
+
+@Test func setActorFormUnion() async throws {
+    let set = ThreadSafeSet([1, 2])
+    await set.formUnion([2, 3])
+    #expect(await set.elements == [1, 2, 3])
+}
+
+@Test func setActorFormIntersection() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    await set.formIntersection([2, 3, 4])
+    #expect(await set.elements == [2, 3])
+}
+
+@Test func setActorSubtract() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    await set.subtract([2])
+    #expect(await set.elements == [1, 3])
+}
+
+@Test func setActorFormSymmetricDifference() async throws {
+    let set = ThreadSafeSet([1, 2, 3])
+    await set.formSymmetricDifference([2, 3, 4])
+    #expect(await set.elements == [1, 4])
+}
+
+@Test func setActorSubsetSupersetDisjoint() async throws {
+    let set = ThreadSafeSet([1, 2])
+    #expect(await set.isSubset(of: [1, 2, 3]))
+    #expect(await set.isSuperset(of: [1]))
+    #expect(await set.isDisjoint(with: [3, 4]))
+    #expect(await set.isStrictSubset(of: [1, 2, 3]))
+    #expect(await set.isStrictSubset(of: [1, 2]) == false)
+    #expect(await set.isStrictSuperset(of: [1]))
+    #expect(await set.isStrictSuperset(of: [1, 2]) == false)
+}
+
 @Test func setActorForEach() async throws {
     let set = ThreadSafeSet([1, 2, 3])
     let sum = ThreadSafe(wrappedValue: 0)

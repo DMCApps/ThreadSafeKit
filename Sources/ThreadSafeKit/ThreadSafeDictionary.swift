@@ -23,6 +23,14 @@ public actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable> {
         storage
     }
 
+    public var keys: [Key] {
+        Array(storage.keys)
+    }
+
+    public var values: [Value] {
+        Array(storage.values)
+    }
+
     public func getValue(forKey key: Key) -> Value? {
         storage[key]
     }
@@ -36,12 +44,33 @@ public actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable> {
         storage.removeValue(forKey: key)
     }
 
+    @discardableResult
+    public func updateValue(_ value: Value, forKey key: Key) -> Value? {
+        storage.updateValue(value, forKey: key)
+    }
+
     public func removeAll(keepingCapacity keepCapacity: Bool = false) {
         storage.removeAll(keepingCapacity: keepCapacity)
     }
 
     public func merge(_ other: [Key: Value], uniquingKeysWith combine: @Sendable (Value, Value) throws -> Value) rethrows {
         try storage.merge(other, uniquingKeysWith: combine)
+    }
+
+    public func mapValues<T: Sendable>(_ transform: @Sendable (Value) throws -> T) rethrows -> [Key: T] {
+        try storage.mapValues(transform)
+    }
+
+    public func compactMapValues<T: Sendable>(_ transform: @Sendable (Value) throws -> T?) rethrows -> [Key: T] {
+        try storage.compactMapValues(transform)
+    }
+
+    public func filter(_ isIncluded: @Sendable ((key: Key, value: Value)) throws -> Bool) rethrows -> [Key: Value] {
+        try storage.filter(isIncluded)
+    }
+
+    public func contains(where predicate: @Sendable ((key: Key, value: Value)) throws -> Bool) rethrows -> Bool {
+        try storage.contains(where: predicate)
     }
 
     public func forEach(_ body: @Sendable ((key: Key, value: Value)) throws -> Void) rethrows {

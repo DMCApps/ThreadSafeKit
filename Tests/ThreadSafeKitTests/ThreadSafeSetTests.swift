@@ -51,6 +51,56 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(set.isEmpty)
 }
 
+@Test(arguments: mechanisms) func threadSafeSetUpdateWith(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2]), mechanism: mechanism)
+    #expect(set.update(with: 1) == 1)
+    #expect(set.update(with: 3) == nil)
+    #expect(set.wrappedValue == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetUnionIntersectionSymmetricDifference(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    #expect(set.union([3, 4]) == [1, 2, 3, 4])
+    #expect(set.intersection([2, 3, 4]) == [2, 3])
+    #expect(set.symmetricDifference([2, 3, 4]) == [1, 4])
+    #expect(set.wrappedValue == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetFormUnion(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2]), mechanism: mechanism)
+    set.formUnion([2, 3])
+    #expect(set.wrappedValue == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetFormIntersection(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    set.formIntersection([2, 3, 4])
+    #expect(set.wrappedValue == [2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetSubtract(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    set.subtract([2])
+    #expect(set.wrappedValue == [1, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetFormSymmetricDifference(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    set.formSymmetricDifference([2, 3, 4])
+    #expect(set.wrappedValue == [1, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeSetSubsetSupersetDisjoint(mechanism: ThreadSafeMechanism) throws {
+    let set = ThreadSafe(Set([1, 2]), mechanism: mechanism)
+    #expect(set.isSubset(of: [1, 2, 3]))
+    #expect(set.isSuperset(of: [1]))
+    #expect(set.isDisjoint(with: [3, 4]))
+    #expect(set.isStrictSubset(of: [1, 2, 3]))
+    #expect(set.isStrictSubset(of: [1, 2]) == false)
+    #expect(set.isStrictSuperset(of: [1]))
+    #expect(set.isStrictSuperset(of: [1, 2]) == false)
+}
+
 @Test(arguments: mechanisms) func threadSafeSetForEach(mechanism: ThreadSafeMechanism) throws {
     let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
     let sum = ThreadSafe(wrappedValue: 0)

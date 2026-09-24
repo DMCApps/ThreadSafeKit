@@ -49,6 +49,145 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(array.isEmpty)
 }
 
+@Test(arguments: mechanisms) func threadSafeArrayInsertAt(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 3], mechanism: mechanism)
+    array.insert(2, at: 1)
+    #expect(array.elements == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayAppendContentsOf(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1], mechanism: mechanism)
+    array.append(contentsOf: [2, 3])
+    #expect(array.elements == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayInsertContentsOfAt(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 4], mechanism: mechanism)
+    array.insert(contentsOf: [2, 3], at: 1)
+    #expect(array.elements == [1, 2, 3, 4])
+}
+
+// removeFirst()/removeLast() trap on an empty collection (unlike pop(), the non-trapping variant),
+// so they're a distinct, worthwhile addition rather than a duplicate of pop().
+@Test(arguments: mechanisms) func threadSafeArrayRemoveFirst(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.removeFirst() == 1)
+    #expect(array.elements == [2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveFirstN(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.removeFirst(2)
+    #expect(array.elements == [3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveLast(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.removeLast() == 3)
+    #expect(array.elements == [1, 2])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveLastN(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.removeLast(2)
+    #expect(array.elements == [1])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayRemoveSubrange(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    array.removeSubrange(1..<3)
+    #expect(array.elements == [1, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayReplaceSubrange(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.replaceSubrange(1..<2, with: [20, 30])
+    #expect(array.elements == [1, 20, 30, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayReserveCapacity(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.reserveCapacity(100)
+    #expect(array.elements == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayReverse(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.reverse()
+    #expect(array.elements == [3, 2, 1])
+}
+
+@Test(arguments: mechanisms) func threadSafeArraySort(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([3, 1, 2], mechanism: mechanism)
+    array.sort()
+    #expect(array.elements == [1, 2, 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeArraySortBy(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    array.sort(by: >)
+    #expect(array.elements == [3, 2, 1])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayShuffleKeepsSameElements(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4, 5], mechanism: mechanism)
+    array.shuffle()
+    #expect(array.elements.sorted() == [1, 2, 3, 4, 5])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayFirstIndexWhere(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.firstIndex(where: { $0 == 2 }) == 1)
+    #expect(array.firstIndex(where: { $0 == 4 }) == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayFirstIndexOf(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.firstIndex(of: 2) == 1)
+    #expect(array.firstIndex(of: 4) == nil)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayContains(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    #expect(array.contains(2))
+    #expect(array.contains(4) == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayFilter(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    #expect(array.filter { $0 % 2 == 0 } == [2, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayCompactMap(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    #expect(array.compactMap { $0 % 2 == 0 ? $0 : nil } == [2, 4])
+}
+
+@Test(arguments: mechanisms) func threadSafeArraySortedAndSortedBy(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([3, 1, 2], mechanism: mechanism)
+    #expect(array.sorted() == [1, 2, 3])
+    #expect(array.sorted(by: >) == [3, 2, 1])
+    #expect(array.elements == [3, 1, 2])
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayMinAndMax(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([3, 1, 2], mechanism: mechanism)
+    #expect(array.min() == 1)
+    #expect(array.max() == 3)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayAllSatisfy(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([2, 4, 6], mechanism: mechanism)
+    #expect(array.allSatisfy { $0 % 2 == 0 })
+    #expect(array.allSatisfy { $0 > 2 } == false)
+}
+
+@Test(arguments: mechanisms) func threadSafeArrayPrefixAndSuffix(mechanism: ThreadSafeMechanism) throws {
+    let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
+    #expect(array.prefix(2) == [1, 2])
+    #expect(array.suffix(2) == [3, 4])
+}
+
 @Test(arguments: mechanisms) func threadSafeArrayForEach(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     let sum = ThreadSafe(wrappedValue: 0)

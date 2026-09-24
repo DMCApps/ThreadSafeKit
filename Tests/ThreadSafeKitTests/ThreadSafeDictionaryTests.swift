@@ -45,6 +45,40 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(dictionary.dictionary == ["a": 2, "b": 3])
 }
 
+@Test(arguments: mechanisms) func threadSafeDictionaryUpdateValue(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1], mechanism: mechanism)
+    #expect(dictionary.updateValue(2, forKey: "a") == 1)
+    #expect(dictionary.updateValue(3, forKey: "b") == nil)
+    #expect(dictionary.dictionary == ["a": 2, "b": 3])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryKeysAndValues(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(Set(dictionary.keys) == ["a", "b"])
+    #expect(Set(dictionary.values) == [1, 2])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryMapValues(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(dictionary.mapValues { $0 * 10 } == ["a": 10, "b": 20])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryCompactMapValues(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(dictionary.compactMapValues { $0 == 1 ? nil : $0 } == ["b": 2])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryFilter(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(dictionary.filter { $0.value > 1 } == ["b": 2])
+}
+
+@Test(arguments: mechanisms) func threadSafeDictionaryContainsWhere(mechanism: ThreadSafeMechanism) throws {
+    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
+    #expect(dictionary.contains { $0.value == 2 })
+    #expect(dictionary.contains { $0.value == 3 } == false)
+}
+
 @Test(arguments: mechanisms) func threadSafeDictionaryForEach(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     let sum = ThreadSafe(wrappedValue: 0)
