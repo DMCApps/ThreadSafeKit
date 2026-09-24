@@ -40,6 +40,11 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // an `async` function. If that function suspends and the task resumes on a different thread,
     // unlocking from a thread other than the one that locked is undefined behavior for both
     // `os_unfair_lock` and `pthread_rwlock` — this traps deterministically instead of risking UB.
+    // If the task instead resumes on the *same* thread (always true on `@MainActor`, and possible
+    // elsewhere), this check can't see it: `pthread_equal` matches, so nothing trips. The write lock
+    // just stays held for the whole `await`, blocking every other thread's access to this instance
+    // and tripping `ReentrancyTracker`/`os_unfair_lock`'s own reentry trap for any other task that
+    // touches this instance from that same thread in the meantime.
     private var modifyOwnerThread: pthread_t?
 
     public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .readerWriterLock) {
@@ -164,6 +169,15 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     /// a subscript, or any other shape member) from within `body` — the lock is already
     /// held, and re-entry traps deterministically under either mechanism instead of hanging:
     /// natively via `os_unfair_lock` for `.lock`, via `ReentrancyTracker` for `.readerWriterLock`.
+    ///
+    /// Nesting a *different* instance's access inside `body` is fine on its own (`a.mutate { b.mutate { ... } }`
+    /// works — reentrancy detection is per-instance) but two instances nested in opposite order on two
+    /// threads deadlock, with no trap: thread 1 running `a.mutate { b.mutate { ... } }` while thread 2 runs
+    /// `b.mutate { a.mutate { ... } }` can leave each thread holding one lock and waiting on the other,
+    /// forever. This can't be caught at compile time or cheaply at runtime, so avoid nesting accesses to
+    /// different instances; if you must, always nest in the same global order, or better, snapshot one
+    /// first (`let bValue = b.wrappedValue`) and `mutate` the other on its own. Actor types' `mutate`
+    /// can't deadlock this way — its closure is synchronous, so it can't `await` into another actor.
     public func mutate<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         try write(body)
     }

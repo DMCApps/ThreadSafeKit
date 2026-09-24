@@ -5,7 +5,7 @@ import Testing
 // Performance coverage for `ThreadSafeArray`: every public member stays within a generous
 // absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
 
-@Test
+@Test(.tags(.performance))
 func arrayActorReadsAreFast() async {
     let array = ThreadSafeArray([1, 2, 3])
     await assertFast("count") { _ = await array.count }
@@ -19,7 +19,7 @@ func arrayActorReadsAreFast() async {
     await assertFast("map") { _ = await array.map { $0 } }
 }
 
-@Test
+@Test(.tags(.performance))
 func arrayActorWritesAreFast() async {
     let array = ThreadSafeArray([1, 2, 3])
     await assertFast("append") { await array.append(0) }
@@ -41,20 +41,20 @@ func arrayActorWritesAreFast() async {
     await assertFast("mutate") { await array.mutate { $0.append(0); $0.removeLast() } }
 }
 
-@Test
+@Test(.tags(.performance))
 func arrayActorRemoveAtIsFast() async {
     let sampleSize = 500
     let array = ThreadSafeArray(Array(0..<sampleSize))
     await assertFast("remove(at:)", sampleSize: sampleSize) { _ = await array.remove(at: 0) }
 }
 
-@Test
+@Test(.tags(.performance))
 func arrayActorRemoveAllIsFast() async {
     let array = ThreadSafeArray([1, 2, 3])
     await assertFast("removeAll") { await array.removeAll() }
 }
 
-@Test
+@Test(.tags(.performance))
 func arrayActorReadOnlyDerivedCollectionsAreFast() async {
     let array = ThreadSafeArray([1, 2, 3])
     await assertFast("contains") { _ = await array.contains(2) }

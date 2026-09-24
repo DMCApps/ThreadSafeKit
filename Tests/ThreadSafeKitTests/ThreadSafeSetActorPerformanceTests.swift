@@ -5,7 +5,7 @@ import Testing
 // Performance coverage for `ThreadSafeSet`: every public member stays within a generous
 // absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
 
-@Test
+@Test(.tags(.performance))
 func setActorReadsAreFast() async {
     let set = ThreadSafeSet([1, 2, 3])
     await assertFast("count") { _ = await set.count }
@@ -24,7 +24,7 @@ func setActorReadsAreFast() async {
     await assertFast("isStrictSuperset(of:)") { _ = await set.isStrictSuperset(of: [1]) }
 }
 
-@Test
+@Test(.tags(.performance))
 func setActorWritesAreFast() async {
     let set = ThreadSafeSet([1, 2, 3])
     await assertFast("insert") { await set.insert(0) }
@@ -37,7 +37,7 @@ func setActorWritesAreFast() async {
     await assertFast("mutate") { await set.mutate { $0.insert(0); $0.remove(0) } }
 }
 
-@Test
+@Test(.tags(.performance))
 func setActorRemoveAllIsFast() async {
     let set = ThreadSafeSet([1, 2, 3])
     await assertFast("removeAll") { await set.removeAll() }

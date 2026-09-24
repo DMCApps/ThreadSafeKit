@@ -13,7 +13,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 // MARK: - Array shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayOverheadReadsAreBounded(mechanism: ThreadSafeMechanism) {
     let raw = [1, 2, 3]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
@@ -21,7 +21,7 @@ func arrayOverheadReadsAreBounded(mechanism: ThreadSafeMechanism) {
     assertOverheadBounded("subscript(safe:)", raw: { _ = raw.indices.contains(0) ? raw[0] : nil }, wrapped: { _ = wrapped[safe: 0] })
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
     var raw = [1, 2, 3]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
@@ -34,14 +34,14 @@ func arrayOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Dictionary shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func dictionaryOverheadReadsAreBounded(mechanism: ThreadSafeMechanism) {
     let raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
     assertOverheadBounded("subscript(key:) get", raw: { _ = raw["a"] }, wrapped: { _ = wrapped["a"] })
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func dictionaryOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
     var raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
@@ -54,14 +54,14 @@ func dictionaryOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Set shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func setOverheadReadsAreBounded(mechanism: ThreadSafeMechanism) {
     let raw: Set<Int> = [1, 2, 3]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
     assertOverheadBounded("contains", raw: { _ = raw.contains(1) }, wrapped: { _ = wrapped.contains(1) })
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func setOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
     var raw: Set<Int> = [1, 2, 3]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
@@ -74,7 +74,7 @@ func setOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Atomic/scalar shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func atomicOverheadIsBounded(mechanism: ThreadSafeMechanism) {
     var raw = 0
     let wrapped = ThreadSafe(wrappedValue: 0, mechanism: mechanism)
@@ -88,14 +88,14 @@ func atomicOverheadIsBounded(mechanism: ThreadSafeMechanism) {
 // multiplier/floor — see its doc comment. These still catch a genuine regression inside the
 // actor's own logic; they just don't (and can't) hold the actor to the sync wrapper's bar.
 
-@Test
+@Test(.tags(.performance))
 func arrayActorOverheadReadsAreBounded() async {
     let raw = [1, 2, 3]
     let wrapped = ThreadSafeArray([1, 2, 3])
     await assertOverheadBounded("count", raw: { _ = raw.count }, wrapped: { _ = await wrapped.count })
 }
 
-@Test
+@Test(.tags(.performance))
 func arrayActorOverheadWritesAreBounded() async {
     var raw = [1, 2, 3]
     let wrapped = ThreadSafeArray([1, 2, 3])
@@ -106,14 +106,14 @@ func arrayActorOverheadWritesAreBounded() async {
     )
 }
 
-@Test
+@Test(.tags(.performance))
 func dictionaryActorOverheadReadsAreBounded() async {
     let raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafeDictionary(["a": 1, "b": 2])
     await assertOverheadBounded("subscript(key:) get", raw: { _ = raw["a"] }, wrapped: { _ = await wrapped["a"] })
 }
 
-@Test
+@Test(.tags(.performance))
 func dictionaryActorOverheadWritesAreBounded() async {
     var raw = ["a": 1, "b": 2]
     let wrapped = ThreadSafeDictionary(["a": 1, "b": 2])
@@ -124,14 +124,14 @@ func dictionaryActorOverheadWritesAreBounded() async {
     )
 }
 
-@Test
+@Test(.tags(.performance))
 func setActorOverheadReadsAreBounded() async {
     let raw: Set<Int> = [1, 2, 3]
     let wrapped = ThreadSafeSet([1, 2, 3])
     await assertOverheadBounded("contains", raw: { _ = raw.contains(1) }, wrapped: { _ = await wrapped.contains(1) })
 }
 
-@Test
+@Test(.tags(.performance))
 func setActorOverheadWritesAreBounded() async {
     var raw: Set<Int> = [1, 2, 3]
     let wrapped = ThreadSafeSet([1, 2, 3])
@@ -142,7 +142,7 @@ func setActorOverheadWritesAreBounded() async {
     )
 }
 
-@Test
+@Test(.tags(.performance))
 func atomicActorOverheadIsBounded() async {
     var raw = 0
     let wrapped = ThreadSafeAtomic(0)

@@ -12,7 +12,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 // MARK: - Array shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     assertFast("count") { _ = array.count }
@@ -27,7 +27,7 @@ func arrayShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("==") { _ = (array.elements == array.elements) }
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     assertFast("append") { array.append(0) }
@@ -50,7 +50,7 @@ func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("mutate") { array.mutate { $0.append(0); $0.removeLast() } }
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayShapeReadOnlyDerivedCollectionsAreFast(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     assertFast("contains") { _ = array.contains(2) }
@@ -67,7 +67,7 @@ func arrayShapeReadOnlyDerivedCollectionsAreFast(mechanism: ThreadSafeMechanism)
 
 // MARK: - Dictionary shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     assertFast("count") { _ = dictionary.count }
@@ -82,7 +82,7 @@ func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("contains(where:)") { _ = dictionary.contains { $0.value > 0 } }
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     assertFast("subscript(key:) set") { dictionary["z"] = 1 }
@@ -94,7 +94,7 @@ func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Set shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func setShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
     assertFast("count") { _ = set.count }
@@ -112,7 +112,7 @@ func setShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("isStrictSuperset(of:)") { _ = set.isStrictSuperset(of: [1]) }
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func setShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
     assertFast("insert") { set.insert(0) }
@@ -127,7 +127,7 @@ func setShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Atomic/scalar shape
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func atomicShapeReadsAndWritesAreFast(mechanism: ThreadSafeMechanism) {
     let value = ThreadSafe(0, mechanism: mechanism)
     assertFast("wrappedValue get") { _ = value.wrappedValue }
@@ -149,7 +149,7 @@ private let largePreload = 200_000
 private let writesPerSample = 500
 private let maxSlowdown = 20.0
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func arrayAppendCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanism) {
     let small = ThreadSafe(Array(0..<smallPreload), mechanism: mechanism)
     let smallNsPerOp = averageNanoseconds(over: writesPerSample) { small.append(0) }
@@ -163,7 +163,7 @@ func arrayAppendCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanis
     )
 }
 
-@Test(arguments: mechanisms)
+@Test(.tags(.performance), arguments: mechanisms)
 func dictionarySubscriptSetCostDoesNotScaleWithCollectionSize(mechanism: ThreadSafeMechanism) {
     let small = ThreadSafe(Dictionary(uniqueKeysWithValues: (0..<smallPreload).map { ($0, $0) }), mechanism: mechanism)
     let smallNsPerOp = averageNanoseconds(over: writesPerSample) { small[-1] = 0 }

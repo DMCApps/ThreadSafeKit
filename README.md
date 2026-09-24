@@ -32,9 +32,31 @@ let all = await list.elements
 
 `ThreadSafe<Value>` also works as a plain instance (`let list = ThreadSafe<[Int]>()`) when you don't want property-wrapper sugar.
 
+In a `Sendable` class, use the plain-instance form as a `let` — `@ThreadSafe var` won't compile there, because the wrapper's generated storage (`_items`) is a `var`:
+
+```swift
+final class Store: Sendable {
+    let items = ThreadSafe<[Int]>()   // not `@ThreadSafe var items: [Int] = []`
+}
+```
+
 ### Subscripts are atomic
 
 `ts[i] += 1`, `dict[k]! += 1`, `dict[k]?.append(x)`, and plain `ts[i] = v`/`dict[k] = v` are each a single atomic access — the write lock is held across the entire get-modify-set, so concurrent compound assignment through a subscript can't lose updates. `ts[i] = ts[i] + 1`, however, is *two* separate accesses (a `get`, then a full `set`), so it is **not** atomic — the two accesses can interleave with another caller's write in between. Use `+=` (or `mutate`, below) for anything that needs to be a single step.
+
+Never pass a subscript `inout` to an `async` function (`await someAsyncFunc(&ts[i])`) — it compiles, but it holds the write lock across the `await`. If the task resumes on a different thread, it traps; if it resumes on the same thread (e.g. `@MainActor`), nothing traps, but the lock stays held for the whole `await`, blocking every other access to that instance and making any reentrant access from that same thread trap. Copy the value out, `await`, then write back instead:
+
+```swift
+// NOT safe: holds the write lock across the suspension point
+await someAsyncFunc(&ts[i])
+
+// OK: the lock is only held for the read and the write, not the await
+var value = ts[i]
+await someAsyncFunc(&value)
+ts[i] = value
+```
+
+The copy-out form is two separate accesses, so it isn't atomic across the `await`: any write another caller makes to `ts[i]` while you're suspended is overwritten by the final assignment. If that matters, re-check or merge inside a single `mutate` after the `await` instead of assigning blindly.
 
 ### Compound operations with `mutate`
 
@@ -85,6 +107,8 @@ let nextID = await idGenerator.mutate { value in
     return value
 }
 ```
+
+**Don't call back into the same instance, and don't nest two instances in opposite orders.** Inside a `mutate` (or `forEach`/`map`/`removeAll(where:)`/… closure), touching the *same* `ThreadSafe` instance traps immediately. Nesting a *different* instance works (`a.mutate { _ in b.mutate { … } }`), but if one thread nests `a` → `b` while another nests `b` → `a`, each holds one lock and waits for the other, and both hang forever with no trap. Avoid nesting different instances; if you must, always nest them in the same order, or snapshot one first (`let bValue = b.wrappedValue`) and then `mutate` the other. The actor types can't deadlock this way: their `mutate` closure is synchronous, so it can't `await` another actor.
 
 **What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
@@ -190,3 +214,12 @@ Also run with the Thread Sanitizer before trusting a change to locking/concurren
 ```
 swift test --sanitize=thread
 ```
+
+Timing-based tests (fixed absolute-time or relative-overhead ceilings) are tagged `.performance` and flaky under CI/parallel load; `swift test --filter`/`--skip` only support regexes, not tags, on this toolchain, so name-based regexes select them instead:
+
+```
+swift test --skip 'Fast|Bounded|CostDoesNotScaleWithCollectionSize'   # correctness only
+swift test --filter 'Fast|Bounded|CostDoesNotScaleWithCollectionSize' # performance only
+```
+
+New performance tests must be tagged `.performance` **and** named to end in `Fast`, `Bounded`, or `CostDoesNotScaleWithCollectionSize`, or these commands will misclassify them.

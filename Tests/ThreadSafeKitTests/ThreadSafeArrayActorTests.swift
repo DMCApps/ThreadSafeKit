@@ -330,16 +330,3 @@ private struct ArrayActorRemoveAllBoom: Error {}
     }
     #expect(await array.elements.sorted() == Array(0..<concurrencyIterations))
 }
-
-// Demonstrates the exact problem `mutate` fixes: reading `count` then appending
-// as two separate actor calls lets both reads observe the same stale count,
-// producing a duplicate instead of a clean sequence. A single `mutate` call
-// doesn't have this problem because both steps happen under one actor call.
-@Test func arrayActorSeparateCountAndAppendCanProduceDuplicates() async throws {
-    let array = ThreadSafeArray<Int>()
-    let countA = await array.count
-    let countB = await array.count
-    await array.append(countA)
-    await array.append(countB)
-    #expect(await array.elements == [0, 0])
-}

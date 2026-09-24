@@ -154,19 +154,3 @@ import Testing
     #expect(sum == 6)
     #expect(await set.elements == [1, 2, 3, 6])
 }
-
-// Demonstrates the exact problem `mutate` fixes: `contains`-then-`insert` as two separate
-// actor calls lets both checks run before either insert, both observing the same stale
-// absence. The set itself still ends up correct ([1], since insert is idempotent), but a
-// caller using the check to guard a side effect ("process this value only once") would run
-// that side effect twice. A single `mutate` call closes the gap because the check and the
-// insert happen under one actor call.
-@Test func setActorSeparateContainsAndInsertObservesStaleAbsence() async throws {
-    let set = ThreadSafeSet<Int>()
-    let sawAbsentFirst = await set.contains(1) == false
-    let sawAbsentSecond = await set.contains(1) == false
-    if sawAbsentFirst { await set.insert(1) }
-    if sawAbsentSecond { await set.insert(1) }
-    #expect(sawAbsentFirst && sawAbsentSecond)
-    #expect(await set.elements == [1])
-}

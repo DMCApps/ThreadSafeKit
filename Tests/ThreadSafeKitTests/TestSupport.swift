@@ -3,6 +3,26 @@ import Testing
 
 let concurrencyIterations = 2000
 
+extension Tag {
+    /// Applied to every timing-based test (fixed absolute-time or relative-overhead ceilings) —
+    /// see ThreadSafePerformanceTests.swift, ThreadSafeOverheadTests.swift, and the four
+    /// `*ActorPerformanceTests.swift` files. Lets those be run/excluded as a group.
+    ///
+    /// This toolchain's `swift test --filter`/`--skip` only support regular expressions over test
+    /// names (confirmed against `swift test --help`, which documents no `tag:` syntax, and
+    /// empirically), not Swift Testing tags — so the tag alone doesn't give a CLI selector. It's
+    /// kept anyway as the source of truth for "is this a performance test" (an IDE/Xcode test
+    /// plan, or a future SwiftPM version, could filter by it directly); the README's `## Testing`
+    /// commands instead rely on the fact that every performance/overhead test name ends in `Fast`,
+    /// `Bounded`, or `CostDoesNotScaleWithCollectionSize`, none of which appear in any correctness
+    /// test name (verified with `grep -rn "@Test" Tests/ | grep -E "Fast|Bounded"`).
+    ///
+    /// RULE: every `.performance` test's name MUST end in `Fast`, `Bounded`, or
+    /// `CostDoesNotScaleWithCollectionSize`, and no correctness test's name may contain those —
+    /// otherwise the README's `--skip`/`--filter` commands silently misclassify it.
+    @Tag static var performance: Self
+}
+
 /// Average wall-clock nanoseconds per call, over `count` synchronous calls to `body`.
 func averageNanoseconds(over count: Int, _ body: () -> Void) -> Double {
     let start = DispatchTime.now()

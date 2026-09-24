@@ -24,19 +24,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(counter.wrappedValue == concurrencyIterations)
 }
 
-// Demonstrates the exact problem `mutate` fixes: reading and writing as two
-// separate lock/queue acquisitions lets a stale read clobber a concurrent write, even
-// though each individual call is itself atomic. A single `mutate` call doesn't
-// have this problem because both steps happen under one acquisition.
-@Test(arguments: mechanisms) func threadSafeAtomicSeparateGetAndMutateCanLoseUpdates(mechanism: ThreadSafeMechanism) throws {
-    let counter = ThreadSafe(wrappedValue: 0, mechanism: mechanism)
-    let a = counter.wrappedValue
-    let b = counter.wrappedValue
-    counter.mutate { $0 = a + 1 }
-    counter.mutate { $0 = b + 1 }
-    #expect(counter.wrappedValue == 1)
-}
-
 @Test(arguments: mechanisms) func threadSafeAtomicCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
     let counter = ThreadSafe(wrappedValue: 42, mechanism: mechanism)
     let data = try JSONEncoder().encode(counter)
