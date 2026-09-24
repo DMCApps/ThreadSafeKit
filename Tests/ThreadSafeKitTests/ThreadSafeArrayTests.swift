@@ -174,11 +174,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(Container(items: ThreadSafe([1, 2])) != Container(items: ThreadSafe([1, 3])))
 }
 
-@Test func threadSafeArrayHashableUsableInSet() throws {
-    let set: Set<ThreadSafe<[Int]>> = [ThreadSafe([1, 2]), ThreadSafe([1, 2]), ThreadSafe([3])]
-    #expect(set.count == 2)
-}
-
 @Test(arguments: mechanisms) func threadSafeArrayDescriptionContainsElements(mechanism: ThreadSafeMechanism) throws {
     #expect(ThreadSafe([1, 2, 3], mechanism: mechanism).description == "ThreadSafe([1, 2, 3])")
 }

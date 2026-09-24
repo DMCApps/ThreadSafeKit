@@ -167,13 +167,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect(Container(values: ThreadSafe(["a": 1])) != Container(values: ThreadSafe(["a": 2])))
 }
 
-@Test func threadSafeDictionaryHashableUsableInSet() throws {
-    let set: Set<ThreadSafe<[String: Int]>> = [
-        ThreadSafe(["a": 1]), ThreadSafe(["a": 1]), ThreadSafe(["a": 2]),
-    ]
-    #expect(set.count == 2)
-}
-
 @Test(arguments: mechanisms) func threadSafeDictionaryDescriptionContainsDictionary(mechanism: ThreadSafeMechanism) throws {
     #expect(ThreadSafe(["a": 1], mechanism: mechanism).description == "ThreadSafe([\"a\": 1])")
 }
@@ -186,12 +179,3 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
     #expect($values.count == 2)
 }
 
-// Hash must not depend on insertion/iteration order — regression test for stdlib
-// Dictionary's own order-independent Hashable conformance, which this forwards to.
-@Test func threadSafeDictionaryHashIsOrderIndependent() throws {
-    var a = Hasher()
-    ThreadSafe(["a": 1, "b": 2]).hash(into: &a)
-    var b = Hasher()
-    ThreadSafe(["b": 2, "a": 1]).hash(into: &b)
-    #expect(a.finalize() == b.finalize())
-}

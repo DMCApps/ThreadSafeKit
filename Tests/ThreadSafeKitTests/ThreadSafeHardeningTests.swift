@@ -12,6 +12,15 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue]
 
 private struct Boom: Error {}
 
+// MARK: - Equatable
+
+@Test
+func equalValuesCompareEqualAcrossMechanisms() {
+    let a = ThreadSafe([1: "a", 2: "b"], mechanism: .lock)
+    let b = ThreadSafe([2: "b", 1: "a"], mechanism: .dispatchQueue)
+    #expect(a == b)
+}
+
 // MARK: - rethrows: the lock/queue must be released when the body throws
 
 // The whole suite never throws from a `forEach`/`map`/`reduce`/`merge`/`mutate`
@@ -142,29 +151,6 @@ func mutateAcceptsOldVoidReturningCallShapes(mechanism: ThreadSafeMechanism) {
     }
     #expect(doubled == 22)
     #expect(counter.wrappedValue == 22)
-}
-
-// MARK: - Hashable
-
-@Test
-func dictionaryHashIsOrderIndependentAcrossManyInsertionOrders() {
-    // The existing order-independence test hashes two hand-written literals.
-    // This shuffles 50 pairs 200 ways and requires a single distinct hash.
-    var hashes = Set<Int>()
-    for _ in 0..<200 {
-        var pairs = (0..<50).map { ($0, "v\($0)") }
-        pairs.shuffle()
-        hashes.insert(ThreadSafe(Dictionary(uniqueKeysWithValues: pairs)).hashValue)
-    }
-    #expect(hashes.count == 1)
-}
-
-@Test
-func equalValuesHashEquallyAcrossMechanisms() {
-    let a = ThreadSafe([1: "a", 2: "b"], mechanism: .lock)
-    let b = ThreadSafe([2: "b", 1: "a"], mechanism: .dispatchQueue)
-    #expect(a == b)
-    #expect(a.hashValue == b.hashValue)
 }
 
 // MARK: - Concurrency stress that asserts on CONTENT, not just count
@@ -372,60 +358,14 @@ func reentrantWriteInsideReadAbortsOnDispatchQueue() async {
 }
 #endif
 
-// MARK: - Hashable/Equatable derive from mutable state, corrupting Set membership
-
-// `ThreadSafe`'s `==`/`hash(into:)` (ThreadSafe+Conformances.swift) read `wrappedValue` —
-// the object's *current*, mutable contents. Set's entire hash-table algorithm depends on a
-// member's hash never changing for as long as it's a member (nothing re-buckets an existing
-// member on demand). Mutating a `ThreadSafe` after inserting it into a `Set` breaks that
-// invariant — reachable through documented, encouraged usage (README's
-// `Set<ThreadSafe<[Int]>>` example), not an edge case.
-//
-// The corruption is real regardless of hash seed, but whether it manifests as an immediate
-// `fatalError` (Set's own internal consistency check catching it) or as silent wrong answers
-// (`contains`/lookups routing to the wrong bucket) depends on Swift's per-process-random hash
-// seed — without pinning it, this specific repro's crash rate is empirically ~35%, which would
-// make a naive test flaky. `SWIFT_DETERMINISTIC_HASHING=1` (set on the current process before
-// the exit test spawns its subprocess, which inherits the environment) fixes the seed, making
-// the crash 100% reproducible for this exact repro. These tests exist to prove the bug, not to
-// pass — they should stay red until `ThreadSafe`'s Hashable conformance is fixed (see the
-// discussion: dropping Hashable while keeping value-based Equatable is the recommended fix,
-// since Equatable alone has no "frozen for membership lifetime" requirement to violate).
-
-#if os(macOS)
-@Test(.timeLimit(.minutes(1)))
-func mutatingAnArrayShapeSetMemberCorruptsTheHashInvariant() async {
-    setenv("SWIFT_DETERMINISTIC_HASHING", "1", 1)
-    await #expect(processExitsWith: .failure) {
-        let a = ThreadSafe([1, 2])
-        var set: Set<ThreadSafe<[Int]>> = [a]
-        a.append(3)
-        set.insert(ThreadSafe([1, 2, 3]))
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
-func mutatingADictionaryShapeSetMemberCorruptsTheHashInvariant() async {
-    setenv("SWIFT_DETERMINISTIC_HASHING", "1", 1)
-    await #expect(processExitsWith: .failure) {
-        let a = ThreadSafe(["x": 1])
-        var set: Set<ThreadSafe<[String: Int]>> = [a]
-        a.setValue(2, forKey: "y")
-        set.insert(ThreadSafe(["x": 1, "y": 2]))
-    }
-}
-
-@Test(.timeLimit(.minutes(1)))
-func mutatingAScalarShapeSetMemberCorruptsTheHashInvariant() async {
-    setenv("SWIFT_DETERMINISTIC_HASHING", "1", 1)
-    await #expect(processExitsWith: .failure) {
-        let a = ThreadSafe(1)
-        var set: Set<ThreadSafe<Int>> = [a]
-        a.mutate { $0 = 2 }
-        set.insert(ThreadSafe(2))
-    }
-}
-#endif
+// Note: ThreadSafe used to conform to Hashable (forwarding hash(into:) to wrappedValue's live,
+// mutable contents), which corrupted Set/Dictionary-key membership the moment a member was
+// mutated after insertion — Set never re-buckets an existing member, so its hash must never
+// change while it's a member, and a reference type's mutable contents can't offer that guarantee
+// the way a value type's CoW does. Hashable was removed entirely (ThreadSafe+Conformances.swift)
+// rather than patched, since nothing in this codebase had a real need for ThreadSafe instances
+// themselves as Set elements/Dictionary keys — Equatable (value-based, kept) has no such
+// invariant to violate. To deduplicate/hash by content: `Set(instances.map(\.wrappedValue))`.
 
 // MARK: - `.lock` mechanism must not retain a duplicate of the initial value
 

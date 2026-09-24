@@ -43,7 +43,9 @@ Alongside `ThreadSafe<Value>`, three real actors cover the async case — `Threa
 
 **Actor types** — `ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`: real actors, isolated by Swift's runtime. Access needs `await`. No lock contention, safe under strict concurrency by construction. Pick actor types when the caller is already async; pick `ThreadSafe<Value>` when it isn't. There is no naming overlap — the sync type is always spelled `ThreadSafe<...>`, and the array/dictionary/atomic names belong exclusively to the actors.
 
-When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a `.dispatchQueue`-backed instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable` and `Hashable`. Actor types are intentionally none of these — all three require synchronous access (`Encodable.encode(to:)`, `==`, `hash(into:)`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare/hash the plain value at the call site instead.
+When the wrapped value is `Codable`, so is `ThreadSafe<Value>`, regardless of mechanism (though decoding always produces a `.dispatchQueue`-backed instance — the mechanism itself isn't part of the encoded representation, so a `.lock`-backed instance won't round-trip back to `.lock`). Same for `Equatable`. Actor types are intentionally neither — both require synchronous access (`Encodable.encode(to:)`, `==`) but reading actor-isolated state needs `await`; snapshot via `elements`/`dictionary`/`get()`/direct `await` and restore via `init(_:)`, or compare the plain value at the call site instead.
+
+`ThreadSafe<Value>` is deliberately **not** `Hashable`, even when `Value` is: hashing/equality-for-Set-membership requires a member's hash to never change while it's a member (`Set` never re-buckets an existing element), which a reference type with mutable contents can't promise — mutating a `ThreadSafe` after inserting it into a `Set` or using it as a `Dictionary` key corrupts the table. Deduplicate/hash by content instead: `Set(instances.map(\.wrappedValue))`.
 
 `ThreadSafe<Value>` conforms to `CustomStringConvertible` unconditionally — `description` prints `ThreadSafe(<contents>)` (e.g. `ThreadSafe(42)`, `ThreadSafe([1, 2, 3])`), the same generic form regardless of shape. Actor types don't get this either, for the same synchronous-access reason.
 
@@ -98,7 +100,7 @@ counter.mutate { $0 += 1 }   // ThreadSafe already works this way, regardless of
 
 **What this does and doesn't fix.** Every type here is already fully thread-safe — no data races, no memory corruption, no crashes, on any single call, with or without `mutate`. The bug `mutate` fixes is a different, narrower one: a *logical* race (check-then-act / TOCTOU) that shows up when a correct outcome depends on two or more calls happening as one step. That race is a bug in your call sequence, not in the underlying storage — but you need `mutate` to close it, since there's no other way to hold the lock/queue/actor across multiple steps. `mutate` doesn't add thread safety that was missing; it adds the ability to make a multi-step operation indivisible.
 
-### Codable, Equatable, and Hashable
+### Codable and Equatable
 
 `ThreadSafe<Value>` conforms conditionally — only when `Value` does — regardless of `mechanism`:
 
@@ -110,16 +112,17 @@ let decoded = try JSONDecoder().decode(ThreadSafe<Int>.self, from: data)
 let cache = ThreadSafe(["a": 1])
 cache == ThreadSafe(["a": 1])   // true
 
-let seen: Set<ThreadSafe<[Int]>> = [ThreadSafe([1, 2]), ThreadSafe([1, 2])]   // one element
-
-struct Container: Codable, Equatable, Hashable {
-    let items: ThreadSafe<[Int]>   // synthesis works because ThreadSafe<[Int]> is itself Codable/Equatable/Hashable
+struct Container: Codable, Equatable {
+    let items: ThreadSafe<[Int]>   // synthesis works because ThreadSafe<[Int]> is itself Codable/Equatable
 }
 ```
 
-`Hashable` forwards straight to `Value`'s own conformance — for the dictionary shape that's stdlib `Dictionary`'s order-independent `Hashable`.
+Not `Hashable` — see above: a member's hash must never change while it's in a `Set`/used as a
+`Dictionary` key, which a mutable reference type can't promise. `Container` above can't add
+`Hashable` to its own conformance list either, for the same reason (its `items` field is still a
+mutable reference under the hood, `let` only stops reassignment, not mutation through it).
 
-Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`) don't conform to any of these — `Encodable.encode(to:)`, `==`, and `hash(into:)` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
+Actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeAtomic`) don't conform to either — `Encodable.encode(to:)` and `==` are synchronous, but reading actor-isolated state needs `await`. Snapshot manually instead:
 
 ```swift
 let snapshot = await list.elements
