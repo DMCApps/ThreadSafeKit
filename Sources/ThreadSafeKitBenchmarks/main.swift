@@ -85,24 +85,24 @@ func measure(ops: Int = actorOps, _ body: () async -> Void) async -> Double {
 }
 
 /// Wall-clock ns per operation (total time / total ops) with `contendedWorkers` threads each
-/// calling `body(iteration)`. Minimum over a few runs.
-func measureContended(_ body: @Sendable @escaping (Int) -> Void) -> Double {
+/// calling `body(iteration)` `ops` times. Minimum over a few runs.
+func measureContended(ops: Int = contendedOpsPerWorker, _ body: @Sendable @escaping (Int) -> Void) -> Double {
     var best = Double.infinity
     for _ in 0..<3 {
         let start = DispatchTime.now().uptimeNanoseconds
         DispatchQueue.concurrentPerform(iterations: contendedWorkers) { _ in
-            for i in 0..<contendedOpsPerWorker { body(i) }
+            for i in 0..<ops { body(i) }
         }
-        let total = Double(contendedWorkers * contendedOpsPerWorker)
+        let total = Double(contendedWorkers * ops)
         best = min(best, Double(DispatchTime.now().uptimeNanoseconds - start) / total)
     }
     return best
 }
 
 /// Actor counterpart of `measureContended`: `contendedWorkers` concurrent tasks, each doing a
-/// tenth of the synchronous per-worker count (actor calls are slower, so this keeps runtime sane).
-func measureContended(_ body: @Sendable @escaping (Int) async -> Void) async -> Double {
-    let opsPerWorker = contendedOpsPerWorker / 10
+/// tenth of the synchronous per-worker count by default (actor calls are slower, so this keeps
+/// runtime sane).
+func measureContended(ops opsPerWorker: Int = contendedOpsPerWorker / 10, _ body: @Sendable @escaping (Int) async -> Void) async -> Double {
     var best = Double.infinity
     for _ in 0..<3 {
         let start = DispatchTime.now().uptimeNanoseconds
@@ -222,7 +222,8 @@ func markdownTable(_ rows: [Row], baseline: [String: Row]?, thresholdPercent: Do
     let headers = ["Operation", "Raw", "actor", ".lock", ".readerWriterLock", "Spread"] + (baseline == nil ? [] : ["vs. baseline"])
     func cell(_ value: Double?, _ previous: Double?) -> String {
         guard let value else { return "-" }
-        let figure = String(format: "%.1f", value)
+        // Fixed locale so the committed tables don't depend on the machine's region settings.
+        let figure = value.formatted(.number.precision(.fractionLength(1)).locale(Locale(identifier: "en_US")))
         guard let previous, previous > 0 else { return figure }
         return figure + " (" + String(format: "%+.0f%%", percentChange(value, from: previous)) + ")"
     }
@@ -305,6 +306,15 @@ func runBenchmarks() async -> [Row] {
             raw: measure { raw.append(opaque(1)); blackHole(raw.popLast()) },
             actor: await measure { await actor.append(1); blackHole(await actor.popLast()) },
             wrapped: wrapped.map { a in measure { a.append(1); blackHole(a.popLast()) } })
+        add("Array elements snapshot",
+            raw: measure { blackHole(opaque(raw)) },
+            actor: await measure { blackHole(await actor.elements) },
+            wrapped: wrapped.map { a in measure { blackHole(a.elements) } })
+        // Scans all 64 elements (the match is last), so this is closure-passing cost plus the scan.
+        add("Array contains(where:)",
+            raw: measure { blackHole(opaque(raw).contains(where: { $0 == 63 })) },
+            actor: await measure { blackHole(await actor.contains(where: { $0 == 63 })) },
+            wrapped: wrapped.map { a in measure { blackHole(a.contains(where: { $0 == 63 })) } })
         blackHole(raw)
     }
 
@@ -326,6 +336,10 @@ func runBenchmarks() async -> [Row] {
             raw: measure { raw[opaque(3)]! += 1 },
             actor: await measure { await actor.mutate { $0[3]! += 1 } },
             wrapped: wrapped.map { d in measure { d[3]! += 1 } })
+        add("Dictionary d[k, default: 0] += 1",
+            raw: measure { raw[opaque(3), default: 0] += 1 },
+            actor: await measure { await actor.mutate { $0[3, default: 0] += 1 } },
+            wrapped: wrapped.map { d in measure { d[3, default: 0] += 1 } })
         add("Dictionary updateValue",
             raw: measure { blackHole(raw.updateValue(1, forKey: opaque(3))) },
             actor: await measure { blackHole(await actor.updateValue(1, forKey: 3)) },
@@ -392,6 +406,38 @@ func runBenchmarks() async -> [Row] {
             wrapped: mechanisms.map { m in
                 let a = ThreadSafe(Array(0..<64), mechanism: m)
                 return measureContended { i in a[i & 63] += 1 }
+            },
+            contended: true)
+
+        // Long critical sections: each read scans 10k elements, so readers hold the lock for
+        // microseconds rather than nanoseconds. This is the case a reader-writer lock is built for.
+        let longReadOps = 1_000
+        let large = Array(0..<10_000)
+        let largeActor = ThreadSafeArray(large)
+        add("Contended long read (count(where:), 10k)",
+            raw: nil,
+            actor: await measureContended(ops: longReadOps) { _ in blackHole(await largeActor.count(where: { $0 & 1 == 0 })) },
+            wrapped: mechanisms.map { m in
+                let a = ThreadSafe(large, mechanism: m)
+                return measureContended(ops: longReadOps) { _ in blackHole(a.count(where: { $0 & 1 == 0 })) }
+            },
+            contended: true)
+        // Same long reads with 1 in 10 operations a write: parallel readers only pay off if
+        // writers don't serialize everything.
+        add("Contended long read + 10% write",
+            raw: nil,
+            actor: await measureContended(ops: longReadOps) { i in
+                if i % 10 == 0 {
+                    await largeActor.mutate { $0[i & 63] += 1 }
+                } else {
+                    blackHole(await largeActor.count(where: { $0 & 1 == 0 }))
+                }
+            },
+            wrapped: mechanisms.map { m in
+                let a = ThreadSafe(large, mechanism: m)
+                return measureContended(ops: longReadOps) { i in
+                    if i % 10 == 0 { a[i & 63] += 1 } else { blackHole(a.count(where: { $0 & 1 == 0 })) }
+                }
             },
             contended: true)
     }
