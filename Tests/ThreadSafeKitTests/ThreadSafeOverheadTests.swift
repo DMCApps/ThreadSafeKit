@@ -83,10 +83,9 @@ func atomicOverheadIsBounded(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Actor shapes
 //
-// Actor calls carry a real Task-hop cost that dwarfs raw synchronous access regardless of what
-// the actor's body does, so `assertOverheadBounded`'s async overload uses a much looser
-// multiplier/floor — see its doc comment. These still catch a genuine regression inside the
-// actor's own logic; they just don't (and can't) hold the actor to the sync wrapper's bar.
+// Uncontended actor calls cost only ~1-2x the raw operation, but actor scheduling is more
+// sensitive to parallel-test contention than a lock, so `assertOverheadBounded`'s async overload
+// uses a somewhat looser multiplier/floor — see its doc comment.
 
 @Test(.tags(.performance))
 func arrayActorOverheadReadsAreBounded() async {
