@@ -59,6 +59,26 @@ func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("mutate") { dictionary.mutate { $0["z"] = 1 } }
 }
 
+// MARK: - Set shape
+
+@Test(arguments: mechanisms)
+func setShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    assertFast("count") { _ = set.count }
+    assertFast("isEmpty") { _ = set.isEmpty }
+    assertFast("wrappedValue") { _ = set.wrappedValue }
+    assertFast("contains") { _ = set.contains(1) }
+    assertFast("description") { _ = set.description }
+}
+
+@Test(arguments: mechanisms)
+func setShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
+    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
+    assertFast("insert") { set.insert(0) }
+    assertFast("remove") { _ = set.remove(0) }
+    assertFast("mutate") { set.mutate { $0.insert(0); $0.remove(0) } }
+}
+
 // MARK: - Atomic/scalar shape
 
 @Test(arguments: mechanisms)

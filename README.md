@@ -28,10 +28,13 @@ One generic type, `ThreadSafe<Value>`, backs the sync API. Pick the backing mech
 | `RangeReplaceableCollection & BidirectionalCollection` (e.g. `Array`) | + `pop()` |
 | `MutableCollection` | + `subscript(index:)`* (get/set) |
 | Dictionary-shaped (`Key`/`Value` keyed storage) | `dictionary`, `getValue(forKey:)`, `setValue(_:forKey:)`, `removeValue(forKey:)`, `removeAll`, `merge`, `subscript(key:)`, init with no initial value |
+| `SetAlgebra` (e.g. `Set`) | `contains(_:)`, `insert(_:)`, `remove(_:)`, `removeAll`, init with no initial value |
 
 \* Also requires `Value.Index: Sendable` — satisfied by `Array`, `Dictionary`, `Set`, and `String`, but not guaranteed for every `Collection`.
 
-`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` and `ThreadSafe<Set<Int>>` both get `Collection` members (e.g. `ThreadSafe("hello").count == 5`).
+`ThreadSafe<[Element]>` picks up the `Collection` + `RangeReplaceableCollection` + `BidirectionalCollection` + `MutableCollection` rows, so it gets the full array API. `ThreadSafe<[Key: Value]>` picks up `Collection` (giving free `count`/`isEmpty`/`forEach`/`map`/`reduce`/`subscript(safe:)`, but not `first`/`last` — `Dictionary` isn't a `BidirectionalCollection`, and its iteration order isn't meaningful) plus the dictionary-shaped row. `ThreadSafe<Set<Element>>` picks up `Collection` (same caveat — no `first`/`last`) plus the `SetAlgebra` row. Any other `Sendable` shape gains whichever rows it structurally satisfies for free — `ThreadSafe<String>` gets `Collection` members for free (e.g. `ThreadSafe("hello").count == 5`).
+
+Both `RangeReplaceableCollection` and `SetAlgebra` only cover the common ergonomic gaps, not their full stdlib surface — for anything else (`union`, `intersection`, `filter`, etc.), drop into `mutate(_:)`/`read`-style access on `elements`/`dictionary`/`wrappedValue` directly.
 
 Alongside `ThreadSafe<Value>`, three real actors cover the async case — `ThreadSafeArray<Element>`, `ThreadSafeDictionary<Key, Value>`, and `ThreadSafeAtomic<Value>`:
 
