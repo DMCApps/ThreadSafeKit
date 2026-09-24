@@ -168,8 +168,7 @@ Subscripts (`ts[i]`, `dict[k]`) are atomic for the whole access under either mec
 A concurrent `DispatchQueue` with barrier writes is the classic reader-writer pattern, and `ThreadSafe` used it originally. It was removed because it can't support the subscript semantics this library promises:
 
 - **Atomic in-place edits need a lock that can be held across a `yield`.** `ts[i] += 1` and `dict[k]?.append(x)` run through a `_modify` accessor, which holds exclusive access while the caller's code edits the value in place. GCD only provides exclusivity *inside* a `queue.sync { }` closure, and you can't `yield` out of a closure. With a queue, those edits split into a separate read and write, which loses updates under concurrency.
-- **The only queue-based workaround is slow and fragile.** "Parking" the queue (an async barrier block that waits on a semaphore until the edit finishes) measured ~6 µs per compound edit, ties up a GCD worker thread for each one, and can stall the main thread behind a low-priority worker, since semaphores don't boost priority.
-- **It's slower even without that.** A queue hop measured ~150-250 ns per plain read or write, against a few ns for a bare lock.
+- **The only queue-based workaround is fragile.** "Parking" the queue (an async barrier block that waits on a semaphore until the edit finishes) ties up a GCD worker thread for each compound edit, and can stall the main thread behind a low-priority worker, since semaphores don't boost priority.
 - **Reentrancy could deadlock silently.** A read nested inside another read (e.g. `ts.count` inside `ts.forEach { }`) hung forever as soon as a writer queued between them, instead of trapping.
 
 `.lock` and `.readerWriterLock` lock and unlock manually, so a subscript's in-place edit holds the lock for exactly the access, and same-instance reentry traps immediately. See [Benchmarks](#benchmarks) for current per-operation costs.
@@ -258,7 +257,7 @@ Nanoseconds per operation (ns/op), lower is better; median of 5 runs. **Raw** is
 swift test
 ```
 
-Also run with the Thread Sanitizer before trusting a change to locking/concurrency behavior — plain `swift test` won't catch a data race, and this package has had real races only TSan caught in the past:
+Also run with the Thread Sanitizer before trusting a change to locking/concurrency behavior — plain `swift test` won't catch a data race:
 
 ```
 swift test --sanitize=thread
