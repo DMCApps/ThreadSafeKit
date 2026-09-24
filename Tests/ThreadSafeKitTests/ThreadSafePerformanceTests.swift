@@ -4,11 +4,11 @@ import Testing
 @testable import ThreadSafeKit
 
 // Performance coverage for the core `ThreadSafe<Value>` wrapper (both `.lock` and
-// `.dispatchQueue` mechanisms): every representative read/write member stays within a
+// `.readerWriterLock` mechanisms): every representative read/write member stays within a
 // generous absolute-time ceiling, plus regression tests for the specific O(n)-per-write
 // defect this file was created to guard against.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 // MARK: - Array shape
 
@@ -34,14 +34,7 @@ func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("append(contentsOf:)") { array.append(contentsOf: [0]) }
     assertFast("push") { array.push(0) }
     assertFast("pop") { _ = array.pop() }
-    // On `.dispatchQueue`, a subscript's in-place modify "parks" the barrier queue on a
-    // dedicated, freshly-spawned `Thread` (see `beginModify()`'s doc comment in ThreadSafe.swift
-    // for why it can't just borrow one from GCD's shared pool) instead of running inside a fast
-    // `sync` — measured at ~17-40us/op uncontended, with real variance under machine load; the
-    // ceiling is widened well past the 50us default tuned for simple ops to give that room.
-    // `.lock`/`.readerWriterLock` clear the default easily; this ceiling only exists to keep
-    // `.dispatchQueue` passing.
-    assertFast("subscript(index:) set", maxMicroseconds: 15_000) { array[0] = 0 }
+    assertFast("subscript(index:) set") { array[0] = 0 }
     assertFast("removeFirst") { array.append(0); _ = array.removeFirst() }
     assertFast("removeLast") { array.append(0); _ = array.removeLast() }
     assertFast("reserveCapacity") { array.reserveCapacity(10) }
@@ -94,8 +87,7 @@ func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
 func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     assertFast("setValue(_:forKey:)") { dictionary.setValue(1, forKey: "z") }
-    // Same `.dispatchQueue` parking cost as the array subscript setter above (~17-40us/op measured).
-    assertFast("subscript(key:) set", maxMicroseconds: 15_000) { dictionary["z"] = 1 }
+    assertFast("subscript(key:) set") { dictionary["z"] = 1 }
     assertFast("removeValue(forKey:)") { _ = dictionary.removeValue(forKey: "does-not-exist") }
     assertFast("updateValue(_:forKey:)") { _ = dictionary.updateValue(1, forKey: "z") }
     assertFast("merge") { dictionary.merge(["y": 1]) { old, _ in old } }
@@ -146,11 +138,10 @@ func atomicShapeReadsAndWritesAreFast(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Regression: per-write cost must not scale with collection size
 
-// `write`'s `.queue` case used to keep `storage` (a second reference to the CoW buffer)
-// alive across the whole mutation, so every single write defeated copy-on-write and copied
-// the entire collection — an O(n) write, i.e. O(n^2) to build an n-element collection.
-// `storage = nil` before mutating (ThreadSafe.swift) fixed this by making `value` uniquely
-// referenced during the call. These tests guard the fix by asserting per-write cost at a
+// `write` used to keep `storage` (a second reference to the CoW buffer) alive across the whole
+// mutation, so every single write defeated copy-on-write and copied the entire collection — an
+// O(n) write, i.e. O(n^2) to build an n-element collection. This was fixed by making `value`
+// uniquely referenced during the call. These tests guard the fix by asserting per-write cost at a
 // large preload isn't dramatically worse than at a small one — a regression back to the
 // O(n) shape blows past `maxSlowdown` by ~100x; the fix stays under ~5x in practice.
 // Bounded by ratio (not absolute time) to stay meaningful across machines/CI load.

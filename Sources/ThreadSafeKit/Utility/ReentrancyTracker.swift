@@ -2,13 +2,12 @@
 import Darwin
 #endif
 
-/// Same-thread reentrancy detection shared by all three `ThreadSafe` mechanisms. Replaces the old
-/// `.dispatchQueue`-only `DispatchSpecificKey` check, which only caught nesting that ran
-/// *synchronously inside* a `queue.sync` call: `pthread_rwlock` doesn't self-detect recursion
-/// reliably (Darwin returns `EDEADLK` for some combinations, but read-in-read succeeds and then
-/// deadlocks the moment a writer queues between the two reads), and `.dispatchQueue`'s subscript
-/// `_modify` "parks" the queue rather than running inside a `sync` call, so nothing GCD-native
-/// would catch reentrancy during its `yield` either.
+/// Same-thread reentrancy detection shared by both `ThreadSafe` mechanisms. Needed because neither
+/// backing lock self-detects recursion reliably: `os_unfair_lock` traps on same-thread relock, but
+/// `pthread_rwlock` doesn't — Darwin returns `EDEADLK` for some combinations, but read-in-read
+/// succeeds and then deadlocks the moment a writer queues between the two reads. Detecting
+/// reentrancy explicitly, ahead of the acquire, gives one consistent trap across both mechanisms
+/// instead of a mechanism-dependent trap-or-hang.
 ///
 /// Tracks, per OS thread, which instances that thread currently holds a read/write/modify access
 /// to, and traps *before* attempting to acquire a lock the thread already holds — the whole

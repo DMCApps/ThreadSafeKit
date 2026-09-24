@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 @Test(arguments: mechanisms) func threadSafeDictionarySetAndGet(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
@@ -117,9 +117,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerW
 // concurrent compound assignment through it can't lose updates.
 //
 // 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
-// iteration per increment) — see the comment on the array equivalent of this test for why:
-// thousands of single-increment iterations starve the shared global thread pool that both
-// `concurrentPerform` and `.dispatchQueue`'s parked subscript modify draw workers from.
+// iteration per increment) — matching the array equivalent of this test.
 @Test(arguments: mechanisms) func threadSafeDictionarySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["k": 0], mechanism: mechanism)
     let workers = 8

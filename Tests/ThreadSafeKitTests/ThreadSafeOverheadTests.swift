@@ -9,13 +9,13 @@ import Testing
 // such thing as a free lock), so these tests assert the added cost stays a small, bounded
 // multiple of the raw operation instead.
 
-private let mechanisms: [ThreadSafeMechanism] = [.lock, .dispatchQueue, .readerWriterLock]
+private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 // MARK: - Array shape
 
 @Test(arguments: mechanisms)
 func arrayOverheadReadsAreBounded(mechanism: ThreadSafeMechanism) {
-    var raw = [1, 2, 3]
+    let raw = [1, 2, 3]
     let wrapped = ThreadSafe(raw, mechanism: mechanism)
     assertOverheadBounded("count", raw: { _ = raw.count }, wrapped: { _ = wrapped.count })
     assertOverheadBounded("subscript(safe:)", raw: { _ = raw.indices.contains(0) ? raw[0] : nil }, wrapped: { _ = wrapped[safe: 0] })
@@ -28,7 +28,7 @@ func arrayOverheadWritesAreBounded(mechanism: ThreadSafeMechanism) {
     assertOverheadBounded(
         "append+removeLast",
         raw: { raw.append(0); raw.removeLast() },
-        wrapped: { wrapped.append(0); wrapped.mutate { $0.removeLast() } }
+        wrapped: { wrapped.append(0); _ = wrapped.mutate { $0.removeLast() } }
     )
 }
 
@@ -90,7 +90,7 @@ func atomicOverheadIsBounded(mechanism: ThreadSafeMechanism) {
 
 @Test
 func arrayActorOverheadReadsAreBounded() async {
-    var raw = [1, 2, 3]
+    let raw = [1, 2, 3]
     let wrapped = ThreadSafeArray([1, 2, 3])
     await assertOverheadBounded("count", raw: { _ = raw.count }, wrapped: { _ = await wrapped.count })
 }
