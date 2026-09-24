@@ -24,25 +24,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(counter.wrappedValue == concurrencyIterations)
 }
 
-@Test(arguments: mechanisms) func threadSafeAtomicCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
-    let counter = ThreadSafe(wrappedValue: 42, mechanism: mechanism)
-    let data = try JSONEncoder().encode(counter)
-    let decoded = try JSONDecoder().decode(ThreadSafe<Int>.self, from: data)
-    #expect(decoded.wrappedValue == 42)
-}
-
-// Auto-synthesized Codable on a containing type only compiles because
-// ThreadSafe<Int> conforms to Codable; this is the whole point of the feature.
-@Test func threadSafeAtomicCodableRoundTripInsideContainingType() throws {
-    struct Container: Codable {
-        let counter: ThreadSafe<Int>
-    }
-    let container = Container(counter: ThreadSafe(wrappedValue: 7))
-    let data = try JSONEncoder().encode(container)
-    let decoded = try JSONDecoder().decode(Container.self, from: data)
-    #expect(decoded.counter.wrappedValue == 7)
-}
-
 @Test func threadSafeAtomicEquatableComparesWrappedValue() throws {
     #expect(ThreadSafe(wrappedValue: 1) == ThreadSafe(wrappedValue: 1))
     #expect(ThreadSafe(wrappedValue: 1) != ThreadSafe(wrappedValue: 2))

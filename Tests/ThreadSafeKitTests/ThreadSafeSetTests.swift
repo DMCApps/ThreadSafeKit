@@ -156,25 +156,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.wrappedValue == [1, 2, 3, 6])
 }
 
-@Test(arguments: mechanisms) func threadSafeSetCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
-    let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
-    let data = try JSONEncoder().encode(set)
-    let decoded = try JSONDecoder().decode(ThreadSafe<Set<Int>>.self, from: data)
-    #expect(decoded.wrappedValue == [1, 2, 3])
-}
-
-// Auto-synthesized Codable on a containing type only compiles because
-// ThreadSafe<Set<Int>> conforms to Codable; this is the whole point of the feature.
-@Test func threadSafeSetCodableRoundTripInsideContainingType() throws {
-    struct Container: Codable {
-        let members: ThreadSafe<Set<Int>>
-    }
-    let container = Container(members: ThreadSafe(Set([1, 2])))
-    let data = try JSONEncoder().encode(container)
-    let decoded = try JSONDecoder().decode(Container.self, from: data)
-    #expect(decoded.members.wrappedValue == [1, 2])
-}
-
 @Test func threadSafeSetEquatableComparesMembers() throws {
     #expect(ThreadSafe(Set([1, 2, 3])) == ThreadSafe(Set([1, 2, 3])))
     #expect(ThreadSafe(Set([1, 2, 3])) != ThreadSafe(Set([1, 2])))

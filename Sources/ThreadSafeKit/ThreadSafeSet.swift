@@ -1,9 +1,3 @@
-/// Deliberately not `Codable`: `Encodable.encode(to:)` is synchronous, but reading
-/// isolated actor state requires `await`, so no `encode(to:)` can call ``elements``.
-/// `init(from:)` could be implemented (actor initializers aren't async), but doing so
-/// alone would give asymmetric, surprising conformance, so it's left out too.
-/// To (de)serialize, snapshot/restore manually at the call site: encode `await elements`,
-/// decode into `ThreadSafeSet(_:)`.
 public actor ThreadSafeSet<Element: Hashable & Sendable> {
     private var storage: Set<Element>
 

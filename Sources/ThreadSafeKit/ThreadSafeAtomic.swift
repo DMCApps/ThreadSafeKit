@@ -1,11 +1,4 @@
 /// Actor-backed single-value wrapper. Access requires `await`, matching ``ThreadSafeArray``/``ThreadSafeDictionary``.
-///
-/// Deliberately not `Codable`: `Encodable.encode(to:)` is synchronous, but reading
-/// isolated actor state requires `await`, so no `encode(to:)` can call ``get()``.
-/// `init(from:)` could be implemented (actor initializers aren't async), but doing so
-/// alone would give asymmetric, surprising conformance, so it's left out too.
-/// To (de)serialize, snapshot/restore manually at the call site: encode `await get()`,
-/// decode into `ThreadSafeAtomic(_:)`.
 public actor ThreadSafeAtomic<Value: Sendable> {
     private var value: Value
 

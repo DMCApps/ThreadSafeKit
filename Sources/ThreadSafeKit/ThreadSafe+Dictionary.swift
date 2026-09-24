@@ -86,9 +86,7 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
 // sequence-of-pairs `merge` overload change the value type, return a plain dictionary/tuple, or
 // only exist on the concrete type, rather than generalizing to arbitrary keyed storage — kept off
 // `_ThreadSafeKeyedStorage` (per its doc comment) and constrained directly to the concrete `Dictionary`
-// shape instead. `contains(where:)` used to live here too; it's now on the general `Collection`
-// extension (`ThreadSafe+Collection.swift`), since `Dictionary.Element` is already `(key: Key, value:
-// KeyedValue)`, giving Array/Set/Dictionary the same member with identical behavior.
+// shape instead.
 extension ThreadSafe {
     @inlinable
     public func mapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
@@ -138,8 +136,8 @@ extension ThreadSafe {
 
     /// `d[k, default: 0] += 1` is atomic for the whole access — the write lock is held across the
     /// entire get-modify-set via `_modify`, same as `subscript(key:)` above. `d[k, default: 0] =
-    /// d[k, default: 0] + 1` is NOT atomic: that's two separate accesses (a `get`, then a full
-    /// `set`), so another writer can slip in between them.
+    /// d[k, default: 0] + 1` is NOT atomic: that's two separate accesses (a `get`, then a
+    /// `_modify`), so another writer can slip in between them.
     @inlinable
     public subscript<Key: Hashable & Sendable, KeyedValue: Sendable>(
         key: Key, default defaultValue: @autoclosure () -> KeyedValue

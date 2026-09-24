@@ -30,10 +30,8 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
         write { $0.update(with: newMember) }
     }
 
-    // `SetAlgebra` has no generic `removeAll(keepingCapacity:)` (that's a `RangeReplaceableCollection`
-    // API `Set` also happens to have, but not every `SetAlgebra` conformer does) — `init()` is the one
-    // reset operation the protocol itself guarantees, so use that directly instead of requiring a
-    // Set-specific extension.
+    // `SetAlgebra` has no `removeAll`; `init()` is the one reset the protocol guarantees, so this
+    // works for any conformer. Concrete `Set` also gets `removeAll(keepingCapacity:)` below.
     @inlinable
     public func removeAll() {
         write { $0 = Value() }
@@ -106,9 +104,8 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
 }
 
 // `popFirst`/`removeFirst`/`filter`/`reserveCapacity`/`removeAll(keepingCapacity:)` aren't part of
-// `SetAlgebra` — they're declared directly on the concrete `Set` type in the standard library — so,
-// per `_ThreadSafeKeyedStorage`'s doc comment on the dictionary side, they're kept off the generic
-// `SetAlgebra` extension above and constrained directly to the concrete `Set` shape instead.
+// `SetAlgebra` — the standard library declares them on the concrete `Set` type — so they're
+// constrained to `Set<Element>` here rather than added to the generic extension above.
 extension ThreadSafe {
     @inlinable
     public func popFirst<Element: Hashable & Sendable>() -> Element? where Value == Set<Element> {

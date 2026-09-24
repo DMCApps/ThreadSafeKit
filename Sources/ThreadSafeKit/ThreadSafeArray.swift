@@ -1,10 +1,3 @@
-/// Deliberately not `Codable`: `Encodable.encode(to:)` is synchronous, but reading
-/// isolated actor state requires `await`, so no `encode(to:)` can call ``elements``.
-/// `init(from:)` could be implemented (actor initializers aren't async), but doing so
-/// alone would give asymmetric, surprising conformance, so it's left out too.
-/// To (de)serialize, snapshot/restore manually at the call site: encode `await elements`,
-/// decode into `ThreadSafeArray(_:)`.
-///
 /// `subscript(index:)` is get-only: an actor subscript can't be assigned from outside the actor —
 /// there's no such thing as an `async` subscript setter. `setElement(_:at:)` is the single-index
 /// atomic write that fills the gap, mirroring `ThreadSafeDictionary.updateValue(_:forKey:)`'s role

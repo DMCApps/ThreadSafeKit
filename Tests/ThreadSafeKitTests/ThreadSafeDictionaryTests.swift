@@ -203,25 +203,6 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary["counter"] == concurrencyIterations)
 }
 
-@Test(arguments: mechanisms) func threadSafeDictionaryCodableRoundTrip(mechanism: ThreadSafeMechanism) throws {
-    let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
-    let data = try JSONEncoder().encode(dictionary)
-    let decoded = try JSONDecoder().decode(ThreadSafe<[String: Int]>.self, from: data)
-    #expect(decoded.dictionary == ["a": 1, "b": 2])
-}
-
-// Auto-synthesized Codable on a containing type only compiles because
-// ThreadSafe<[String: Int]> conforms to Codable; this is the whole point of the feature.
-@Test func threadSafeDictionaryCodableRoundTripInsideContainingType() throws {
-    struct Container: Codable {
-        let values: ThreadSafe<[String: Int]>
-    }
-    let container = Container(values: ThreadSafe(["a": 1]))
-    let data = try JSONEncoder().encode(container)
-    let decoded = try JSONDecoder().decode(Container.self, from: data)
-    #expect(decoded.values.dictionary == ["a": 1])
-}
-
 @Test func threadSafeDictionaryEquatableComparesDictionary() throws {
     #expect(ThreadSafe(["a": 1]) == ThreadSafe(["a": 1]))
     #expect(ThreadSafe(["a": 1]) != ThreadSafe(["a": 2]))

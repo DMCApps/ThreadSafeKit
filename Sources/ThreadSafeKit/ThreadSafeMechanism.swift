@@ -1,37 +1,29 @@
 /// Backing mechanism for ``ThreadSafe``, the lock-based thread-safe wrapper. The actor-backed
-/// alternatives (``ThreadSafeArray``, ``ThreadSafeDictionary``, ``ThreadSafeAtomic``) don't take this —
+/// alternatives (``ThreadSafeArray``, ``ThreadSafeDictionary``, ``ThreadSafeSet``, ``ThreadSafeAtomic``) don't take this —
 /// actor isolation always requires `await`, so there's no sync/mechanism choice to make.
 ///
-/// Approximate, uncontended, single-thread, per-call costs (Apple silicon, release build; real
-/// numbers vary by machine/load — these are for relative comparison between mechanisms, not a
-/// performance contract):
+/// Per-call costs from `ThreadSafeKitBenchmarks` (Apple M4 Max, release build; real numbers vary
+/// by machine and load, so treat these as a comparison between mechanisms, not a contract). The
+/// contended rows are 8 threads sharing one instance. Full results: `Benchmarks/RESULTS.md`.
 ///
-/// | Mechanism | `get` (`count`) | `set`/`+=` (`a[i] += 1`) | `append`+`pop` |
-/// |---|---|---|---|
-/// | `.lock` | ~4ns | ~12ns | ~19ns |
-/// | `.readerWriterLock` | ~20ns | ~28ns | ~49ns |
+/// | Mechanism | `count` | `a[i] += 1` | `append` + `popLast` | Contended 100% read | Contended 100% write |
+/// |---|---|---|---|---|---|
+/// | `.lock` | ~4ns | ~12ns | ~19ns | ~45ns | ~74ns |
+/// | `.readerWriterLock` | ~20ns | ~27ns | ~52ns | ~340ns | ~2260ns |
 ///
-/// `.lock` is now the cheaper of the two: it skips ``ReentrancyTracker`` entirely (`os_unfair_lock`
-/// already traps on a same-thread relock, so tracking would be pure overhead), landing within a
-/// few ns of a bare `OSAllocatedUnfairLock` lock/unlock. `.readerWriterLock` still needs the
-/// tracker — `pthread_rwlock` read-in-read succeeds and only deadlocks once a writer queues, so
-/// without tracking that case would hang instead of trap — which is why it costs more per call
-/// despite a bare `pthread_rwlock` rdlock/unlock being *cheaper* than a bare unfair lock/unlock.
-/// `.readerWriterLock` remains the default: the numbers above are all uncontended single-thread
-/// costs, and its concurrent-reads advantage only shows up under real read contention, which this
-/// table doesn't measure.
+/// `.lock` is cheaper in every measured row, including contended reads. It skips
+/// ``ReentrancyTracker`` entirely, because `os_unfair_lock` already traps on a same-thread relock.
+/// `.readerWriterLock` needs the tracker (`pthread_rwlock` would hang on some reentrant
+/// combinations instead of trapping), which adds per-call cost. The benchmark's critical sections
+/// are short; reads that hold the lock for a long time (e.g. `filter` over a large collection)
+/// aren't measured.
 public enum ThreadSafeMechanism: Sendable {
-    /// `pthread_rwlock_t`, locked manually: concurrent reads, exclusive writes. **Default.** Pick
-    /// `.lock` instead only for a specific reason below — `.readerWriterLock`'s extra per-call
-    /// cost buys concurrent reads, and a subscript's in-place modify holds the write lock directly
-    /// across its `yield` (no queue to park, so no extra cost for compound edits).
+    /// `pthread_rwlock_t`, locked manually: concurrent reads, exclusive writes. **Default.**
+    /// Same-thread reentry traps with this package's own message, via ``ReentrancyTracker``.
     case readerWriterLock
-    /// `OSAllocatedUnfairLock`. Every access — reads included — is fully exclusive; there's no
-    /// concurrent-reads case to make here. Cheaper per call than `.readerWriterLock` (see the
-    /// table above) because it needs no reentrancy tracker, so prefer it for write-dominated
-    /// workloads with no meaningful read concurrency to exploit, where `.readerWriterLock`'s
-    /// reader/writer bookkeeping would be pure overhead. The trade-off: same-thread reentry
-    /// crashes with `os_unfair_lock`'s own message ("Trying to recursively lock an
-    /// os_unfair_lock...") rather than this package's own reentrancy-trap message.
+    /// `OSAllocatedUnfairLock`. Every access, reads included, is exclusive. Cheaper than
+    /// `.readerWriterLock` in every measured row (see the table above). The trade-off: same-thread
+    /// reentry crashes with `os_unfair_lock`'s own message ("BUG IN CLIENT OF LIBPLATFORM: Trying to
+    /// recursively lock an os_unfair_lock", in the crash report) rather than this package's own.
     case lock
 }
