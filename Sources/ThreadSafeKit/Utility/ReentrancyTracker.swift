@@ -20,6 +20,7 @@ import Darwin
 /// thread that nests deeper than the inline capacity falls back to a heap array; that thread's
 /// `Box` (allocated once, lazily, and reused for the rest of the thread's life) is the only
 /// per-thread state, so this fallback allocates at most once per thread, not once per access.
+@usableFromInline
 enum ReentrancyTracker {
     private final class Box {
         static let inlineCapacity = 4
@@ -84,6 +85,7 @@ enum ReentrancyTracker {
     }
 
     /// Returns `false`, with no side effects, if `instance` is already active on this thread.
+    @usableFromInline
     static func beginAccess(_ instance: AnyObject) -> Bool {
         let box = currentBox()
         let id = ObjectIdentifier(instance)
@@ -92,6 +94,7 @@ enum ReentrancyTracker {
         return true
     }
 
+    @usableFromInline
     static func endAccess(_ instance: AnyObject) {
         currentBox().remove(ObjectIdentifier(instance))
     }

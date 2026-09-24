@@ -1,10 +1,12 @@
 extension ThreadSafe: CustomStringConvertible {
+    @inlinable
     public var description: String {
         "ThreadSafe(\(wrappedValue))"
     }
 }
 
 extension ThreadSafe: Equatable where Value: Equatable {
+    @inlinable
     public static func == (lhs: ThreadSafe, rhs: ThreadSafe) -> Bool {
         lhs.wrappedValue == rhs.wrappedValue
     }
@@ -21,11 +23,13 @@ extension ThreadSafe: Equatable where Value: Equatable {
 // keep. To deduplicate/hash by content, snapshot first: `Set(instances.map(\.wrappedValue))`.
 
 extension ThreadSafe: Codable where Value: Codable {
+    @inlinable
     public convenience init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         self.init(wrappedValue: try container.decode(Value.self))
     }
 
+    @inlinable
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(wrappedValue)

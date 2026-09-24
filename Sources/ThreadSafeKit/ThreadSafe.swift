@@ -21,16 +21,24 @@ import Darwin
 /// `$name` gives `mutate`/shape-specific members/etc.
 @propertyWrapper
 public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
-    private enum Backing {
+    // Every public member (plus `read`/`write`/`beginModify`/`endModify`) is `@inlinable` so a
+    // client module can specialize it for its concrete `Value`; unspecialized, each call paid
+    // ~40–200ns of generic dispatch on top of the lock (see `ThreadSafeKitBenchmarks`). Everything
+    // they touch is `@usableFromInline` for that reason — don't make it `private`, and mark new
+    // public members `@inlinable` too.
+    @usableFromInline
+    enum Backing {
         case lock(OSAllocatedUnfairLock<Void>)
         case readerWriterLock(ReaderWriterLock)
     }
 
-    private let backing: Backing
+    @usableFromInline
+    let backing: Backing
     // State lives directly on the instance now (not boxed inside the lock) so a subscript
     // `_modify` can `yield &storage[index]` directly — `OSAllocatedUnfairLock.withLock`'s
     // closure-based API doesn't support holding the lock across a `yield`. `read`/`write`/
     // `beginModify` guard every access to it.
+    @usableFromInline
     var storage: Value
 
     // Set right after `beginModify()` acquires its lock/rwlock; checked (and
@@ -45,8 +53,10 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // just stays held for the whole `await`, blocking every other thread's access to this instance
     // and tripping `ReentrancyTracker`/`os_unfair_lock`'s own reentry trap for any other task that
     // touches this instance from that same thread in the meantime.
-    private var modifyOwnerThread: pthread_t?
+    @usableFromInline
+    var modifyOwnerThread: pthread_t?
 
+    @inlinable
     public init(wrappedValue: Value, mechanism: ThreadSafeMechanism = .readerWriterLock) {
         storage = wrappedValue
         switch mechanism {
@@ -57,6 +67,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
+    @inlinable
     public convenience init(_ value: Value, mechanism: ThreadSafeMechanism = .readerWriterLock) {
         self.init(wrappedValue: value, mechanism: mechanism)
     }
@@ -70,6 +81,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // process-terminating trap, just not this codebase's wording. `.readerWriterLock` still needs
     // the tracker: `pthread_rwlock` read-in-read succeeds and only deadlocks once a writer queues,
     // so without tracking that case wouldn't trap at all, it would hang.
+    @inlinable
     func read<T: Sendable>(_ body: @Sendable (Value) throws -> T) rethrows -> T {
         switch backing {
         case .lock(let lock):
@@ -85,6 +97,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
+    @inlinable
     func write<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         switch backing {
         case .lock(let lock):
@@ -104,6 +117,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     /// its `yield`. `_modify` can't call `write(_:)`: holding a lock across a coroutine suspension
     /// isn't expressible through a closure-based API, so the lock/rwlock has to be entered
     /// and exited as two separate calls instead. Must be paired with `endModify()`.
+    @inlinable
     func beginModify() {
         switch backing {
         case .lock(let lock):
@@ -116,6 +130,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     }
 
     /// Ends the critical section begun by `beginModify()`.
+    @inlinable
     func endModify() {
         if let owner = modifyOwnerThread, pthread_equal(owner, pthread_self()) == 0 {
             fatalError("""
@@ -140,7 +155,8 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
 
     /// Only reachable for `.readerWriterLock` — `.lock` never calls `ReentrancyTracker`, so its
     /// reentry crashes natively via `os_unfair_lock` instead (see the comment above `read(_:)`).
-    private static func trapReentrant() -> Never {
+    @usableFromInline
+    static func trapReentrant() -> Never {
         fatalError("""
         ThreadSafe: reentrant access from the same thread. A read/write/subscript-modify was \
         called again on an instance already being read/written/modified on this thread — e.g. \
@@ -154,12 +170,14 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // snapshot accessors) return the same instance, not a copy — mutating through it bypasses
     // the lock entirely. Only value-type `Value`s (Array/Dictionary/Set/String/scalars)
     // get real safety from these accessors.
+    @inlinable
     public var wrappedValue: Value {
         get { read { $0 } }
         @available(*, unavailable, message: "Direct assignment isn't atomic across read-modify-write; use $name's mutate/etc. instead")
         set {}
     }
 
+    @inlinable
     public var projectedValue: ThreadSafe<Value> { self }
 
     /// Runs `body` as a single unit of work under the lock, so compound
@@ -178,6 +196,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     /// different instances; if you must, always nest in the same global order, or better, snapshot one
     /// first (`let bValue = b.wrappedValue`) and `mutate` the other on its own. Actor types' `mutate`
     /// can't deadlock this way — its closure is synchronous, so it can't `await` into another actor.
+    @inlinable
     public func mutate<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         try write(body)
     }
