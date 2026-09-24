@@ -5,9 +5,10 @@ import Darwin
 /// Same-thread reentrancy detection for `ThreadSafe`'s `.readerWriterLock` mechanism
 /// (`ThreadSafe.swift`). `.lock` doesn't use this at all — `os_unfair_lock` already traps on a
 /// same-thread relock, so tracking would be pure overhead there. `pthread_rwlock` doesn't
-/// self-detect reliably: Darwin returns `EDEADLK` for some combinations, but read-in-read
-/// succeeds and then deadlocks the moment a writer queues between the two reads. Detecting
-/// reentrancy explicitly, ahead of the acquire, gives a deterministic trap instead of that hang.
+/// self-detect reliably: Darwin returns `EDEADLK` for read-in-write and write-in-write, but
+/// write-in-read hangs outright, and read-in-read succeeds and then deadlocks the moment a writer
+/// queues between the two reads. Detecting reentrancy explicitly, ahead of the acquire, gives a
+/// deterministic trap instead of those hangs.
 ///
 /// Tracks, per OS thread, which instances that thread currently holds a read/write/modify access
 /// to, and traps *before* attempting to acquire the rwlock a thread already holds — the whole
@@ -17,9 +18,10 @@ import Darwin
 /// many *distinct* instances a thread has active at once, e.g. `a.mutate { b.mutate { ... } }`)
 /// is almost always 0 or 1, occasionally a handful — small enough that a linear scan beats
 /// hashing, and small enough to size inline with zero heap allocation in the common case. A
-/// thread that nests deeper than the inline capacity falls back to a heap array; that thread's
-/// `Box` (allocated once, lazily, and reused for the rest of the thread's life) is the only
-/// per-thread state, so this fallback allocates at most once per thread, not once per access.
+/// thread that nests deeper than the inline capacity falls back to a heap array, which only
+/// allocates when it grows (it keeps its capacity as entries are removed). That thread's `Box`
+/// (allocated once, lazily, and reused for the rest of the thread's life) is the only per-thread
+/// state, so nothing allocates per access.
 @usableFromInline
 enum ReentrancyTracker {
     private final class Box {

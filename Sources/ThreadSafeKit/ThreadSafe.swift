@@ -13,8 +13,7 @@ import Darwin
 /// is held across the whole get-modify-set via a `_modify` accessor, not just a plain `set`.
 ///
 /// Shape-specific members (`append`/`popLast` for collections, `updateValue`/`removeValue` for
-/// dictionaries, etc.) are added via constrained extensions in `ThreadSafe+Collection.swift`,
-/// `ThreadSafe+Array.swift`, and `ThreadSafe+Dictionary.swift`.
+/// dictionaries, etc.) are added via constrained extensions in the `ThreadSafe+*.swift` files.
 ///
 /// Also usable as a property wrapper: `wrappedValue` is a plain-value snapshot (read-only — direct
 /// assignment isn't atomic across read-modify-write), and `projectedValue` is this instance itself, so
@@ -34,10 +33,10 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
 
     @usableFromInline
     let backing: Backing
-    // State lives directly on the instance now (not boxed inside the lock) so a subscript
-    // `_modify` can `yield &storage[index]` directly — `OSAllocatedUnfairLock.withLock`'s
-    // closure-based API doesn't support holding the lock across a `yield`. `read`/`write`/
-    // `beginModify` guard every access to it.
+    // State lives on the instance (not as `OSAllocatedUnfairLock`'s own state) so a subscript
+    // `_modify` can `yield &storage[index]` directly — the lock's state is only reachable inside
+    // the closure passed to `withLock`, which can't span a `yield`. `read`/`write`/`beginModify`
+    // guard every access to it.
     @usableFromInline
     var storage: Value
 
@@ -76,11 +75,12 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // same-thread relock (read-in-read, read-in-write, write-in-read, write-in-write,
     // modify-in-modify — every combination, since every access takes the same lock), so tracking
     // would be pure overhead that duplicates what the lock already guarantees. The trade-off is
-    // that `.lock` reentry now crashes with the OS's own message ("Trying to recursively lock an
-    // os_unfair_lock...") instead of `trapReentrant()`'s message below — still a deterministic
-    // process-terminating trap, just not this codebase's wording. `.readerWriterLock` still needs
-    // the tracker: `pthread_rwlock` read-in-read succeeds and only deadlocks once a writer queues,
-    // so without tracking that case wouldn't trap at all, it would hang.
+    // that `.lock` reentry crashes with the OS's own message ("BUG IN CLIENT OF LIBPLATFORM: Trying
+    // to recursively lock an os_unfair_lock", in the crash report) instead of `trapReentrant()`'s
+    // message below — still a deterministic process-terminating trap, just not this codebase's
+    // wording. `.readerWriterLock` needs the tracker: on Darwin, `pthread_rwlock` write-in-read
+    // hangs outright, and read-in-read succeeds but deadlocks once a writer queues, so without
+    // tracking those cases would hang instead of trapping.
     @inlinable
     func read<T: Sendable>(_ body: @Sendable (Value) throws -> T) rethrows -> T {
         switch backing {

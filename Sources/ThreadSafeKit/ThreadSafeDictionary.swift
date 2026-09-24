@@ -1,10 +1,3 @@
-/// Deliberately not `Codable`: `Encodable.encode(to:)` is synchronous, but reading
-/// isolated actor state requires `await`, so no `encode(to:)` can call ``dictionary``.
-/// `Decodable` alone only compiles as a `@preconcurrency` conformance (a non-`Sendable`
-/// `Decoder` can't otherwise be passed into the actor's initializer), and a decode-only type
-/// would be asymmetric and surprising, so it's left out too.
-/// To (de)serialize, snapshot/restore manually at the call site: encode `await dictionary`,
-/// decode into `ThreadSafeDictionary(_:)`.
 public actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable> {
     private var storage: [Key: Value]
 
@@ -146,8 +139,8 @@ public actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable> {
         storage[key]
     }
 
-    /// `d[k, default: 0] += 1` isn't expressible here — an actor subscript can't have a `_modify`
-    /// accessor from outside the actor, so this is get-only, mirroring `subscript(key:)` above.
+    /// `d[k, default: 0] += 1` isn't expressible here — an actor's subscript can't be assigned or
+    /// modified from outside the actor, so this is get-only, mirroring `subscript(key:)` above.
     /// For an atomic default-and-update, use `mutate`: `await dict.mutate { $0[k, default: 0] += 1 }`.
     public subscript(key: Key, default defaultValue: @autoclosure @Sendable () -> Value) -> Value {
         storage[key, default: defaultValue()]
