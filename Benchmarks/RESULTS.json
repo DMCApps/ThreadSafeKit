@@ -1,188 +1,220 @@
 {
   "rows" : [
     {
-      "actor" : 34.3225,
+      "actor" : 35.61334,
       "contended" : false,
-      "lock" : 4.48775,
+      "lock" : 4.451418,
       "operation" : "Array count",
-      "raw" : 5.349166,
-      "readerWriterLock" : 20.813334,
-      "spreadPercent" : 14.239930075023683
+      "raw" : 5.2685,
+      "readerWriterLock" : 19.873,
+      "spreadPercent" : 15.981848374794394
     },
     {
-      "actor" : 34.9875,
+      "actor" : 34.75041,
       "contended" : false,
-      "lock" : 4.460168,
+      "lock" : 4.464916,
       "operation" : "Array a[i] get",
-      "raw" : 5.2205,
-      "readerWriterLock" : 20.972416,
-      "spreadPercent" : 18.302718641988363
+      "raw" : 5.008416,
+      "readerWriterLock" : 20.204334,
+      "spreadPercent" : 16.77151373060547
     },
     {
-      "actor" : 57.1525,
+      "actor" : 56.13792,
       "contended" : false,
-      "lock" : 30.507416,
+      "lock" : 30.896,
       "operation" : "Array a[i] = v",
-      "raw" : 2.016416,
-      "readerWriterLock" : 46.7735,
-      "spreadPercent" : 5.839563730995772
+      "raw" : 1.983668,
+      "readerWriterLock" : 46.899666,
+      "spreadPercent" : 9.262152926221713
     },
     {
-      "actor" : 30.69667,
+      "actor" : 30.16917,
       "contended" : false,
-      "lock" : 11.676668,
+      "lock" : 11.628,
       "operation" : "Array a[i] += 1",
-      "raw" : 1.983666,
-      "readerWriterLock" : 27.7305,
-      "spreadPercent" : 8.53197162067124
+      "raw" : 1.97825,
+      "readerWriterLock" : 27.312834,
+      "spreadPercent" : 7.689043687650492
     },
     {
-      "actor" : 124.11792,
+      "actor" : 124.58083,
       "contended" : false,
-      "lock" : 19.5095,
+      "lock" : 19.123084,
       "operation" : "Array append + popLast",
-      "raw" : 2.532918,
-      "readerWriterLock" : 50.558168,
-      "spreadPercent" : 7.214864553166424
+      "raw" : 2.478332,
+      "readerWriterLock" : 50.1575,
+      "spreadPercent" : 9.836718805397714
     },
     {
-      "actor" : 30.97792,
+      "actor" : 31.23291,
       "contended" : false,
-      "lock" : 7.754,
+      "lock" : 7.633582,
       "operation" : "Array elements snapshot",
-      "raw" : 5.09925,
-      "readerWriterLock" : 24.0495,
-      "spreadPercent" : 12.35888480009979
+      "raw" : 4.867,
+      "readerWriterLock" : 23.585418,
+      "spreadPercent" : 16.42851285281274
     },
     {
-      "actor" : 2604.29583,
+      "actor" : 2588.515,
       "contended" : false,
-      "lock" : 24.021666,
+      "lock" : 23.480418,
       "operation" : "Array contains(where:)",
-      "raw" : 21.588332,
-      "readerWriterLock" : 40.216166,
-      "spreadPercent" : 10.765362366964574
+      "raw" : 21.093332,
+      "readerWriterLock" : 39.101916,
+      "spreadPercent" : 10.345497256479842
     },
     {
-      "actor" : 40.46125,
+      "actor" : 41.50208,
       "contended" : false,
-      "lock" : 8.147834,
+      "lock" : 8.207416,
       "operation" : "Dictionary d[k] get",
-      "raw" : 9.628916,
-      "readerWriterLock" : 24.544834,
-      "spreadPercent" : 9.673114921046114
+      "raw" : 9.72575,
+      "readerWriterLock" : 24.117334,
+      "spreadPercent" : 6.832259995106862
     },
     {
-      "actor" : 73.72583,
+      "actor" : 74.87584,
       "contended" : false,
-      "lock" : 18.246084,
+      "lock" : 18.18175,
       "operation" : "Dictionary d[k] = v",
-      "raw" : 7.055582,
-      "readerWriterLock" : 34.31275,
-      "spreadPercent" : 6.566317185302843
+      "raw" : 6.70725,
+      "readerWriterLock" : 33.57825,
+      "spreadPercent" : 7.793735528206507
     },
     {
-      "actor" : 33.45209,
+      "actor" : 33.0825,
       "contended" : false,
-      "lock" : 16.79575,
+      "lock" : 16.643418,
       "operation" : "Dictionary d[k]! += 1",
-      "raw" : 6.19825,
-      "readerWriterLock" : 32.45075,
-      "spreadPercent" : 7.1870449835520045
+      "raw" : 6.091416,
+      "readerWriterLock" : 32.385168,
+      "spreadPercent" : 6.999086742424796
     },
     {
-      "actor" : 33.78709,
+      "actor" : 34.04917,
       "contended" : false,
-      "lock" : 17.175,
+      "lock" : 16.8425,
       "operation" : "Dictionary d[k, default: 0] += 1",
-      "raw" : 9.202334,
-      "readerWriterLock" : 32.54125,
-      "spreadPercent" : 7.755684197721662
+      "raw" : 9.05725,
+      "readerWriterLock" : 32.407168,
+      "spreadPercent" : 8.509950638081065
     },
     {
-      "actor" : 74.0125,
+      "actor" : 75.53625,
       "contended" : false,
-      "lock" : 13.736666,
+      "lock" : 13.6625,
       "operation" : "Dictionary updateValue",
-      "raw" : 7.347584,
-      "readerWriterLock" : 30.027082,
-      "spreadPercent" : 7.355613072342307
+      "raw" : 7.170916,
+      "readerWriterLock" : 29.34525,
+      "spreadPercent" : 7.56369088694082
     },
     {
-      "actor" : 37.39291,
+      "actor" : 37.3225,
       "contended" : false,
-      "lock" : 7.247666,
+      "lock" : 7.049416,
       "operation" : "Set contains",
-      "raw" : 8.4855,
-      "readerWriterLock" : 23.08725,
-      "spreadPercent" : 8.070834818686226
+      "raw" : 8.55125,
+      "readerWriterLock" : 22.891166,
+      "spreadPercent" : 8.856036429074878
     },
     {
-      "actor" : 162.73792,
+      "actor" : 197.10959,
       "contended" : false,
-      "lock" : 27.197166,
+      "lock" : 26.64725,
       "operation" : "Set insert + remove",
-      "raw" : 27.884334,
-      "readerWriterLock" : 60.908416,
-      "spreadPercent" : 12.988352873927965
+      "raw" : 18.0785,
+      "readerWriterLock" : 70.282416,
+      "spreadPercent" : 22.269652590792667
     },
     {
-      "actor" : 27.05042,
+      "actor" : 27.52833,
       "contended" : false,
-      "lock" : 4.22375,
+      "lock" : 4.425666,
       "operation" : "Scalar read",
-      "raw" : 1.752084,
-      "readerWriterLock" : 20.107916,
-      "spreadPercent" : 12.559928973068955
+      "raw" : 1.684834,
+      "readerWriterLock" : 19.442166,
+      "spreadPercent" : 9.63102374898877
     },
     {
-      "actor" : 28.81666,
+      "actor" : 28.405,
       "contended" : false,
-      "lock" : 3.962,
+      "lock" : 3.956916,
       "operation" : "Scalar mutate { += 1 }",
-      "raw" : 1.240084,
-      "readerWriterLock" : 19.5955,
-      "spreadPercent" : 12.232862190812716
+      "raw" : 1.236582,
+      "readerWriterLock" : 19.475166,
+      "spreadPercent" : 15.70438303115648
     },
     {
-      "actor" : 253.553125,
+      "actor" : 257.7,
       "contended" : true,
-      "lock" : 46.512135,
+      "lock" : 48.92869875,
       "operation" : "Contended 90% read \/ 10% write",
-      "readerWriterLock" : 1447.910105,
-      "spreadPercent" : 12.474704014860091
+      "readerWriterLock" : 1320.56453125,
+      "spreadPercent" : 13.50522074306999
     },
     {
-      "actor" : 269.725525,
+      "actor" : 276.7453125,
       "contended" : true,
-      "lock" : 43.7343225,
+      "lock" : 47.03265625,
       "operation" : "Contended 100% read",
-      "readerWriterLock" : 328.23770875,
-      "spreadPercent" : 8.101000078370928
+      "readerWriterLock" : 339.10604125,
+      "spreadPercent" : 8.913466374759555
     },
     {
-      "actor" : 271.656775,
+      "actor" : 277.7515625,
       "contended" : true,
-      "lock" : 77.546875,
+      "lock" : 79.00171875,
       "operation" : "Contended 100% write (a[i] += 1)",
-      "readerWriterLock" : 2315.85974,
-      "spreadPercent" : 12.079235829844492
+      "readerWriterLock" : 2282.7113025,
+      "spreadPercent" : 10.010627752994202
     },
     {
-      "actor" : 419092.849,
+      "actor" : 3826.6415,
       "contended" : true,
-      "lock" : 8974.5,
+      "lock" : 146.0388664,
+      "operation" : "Contended long read (count(where:), 64)",
+      "readerWriterLock" : 378.3907,
+      "spreadPercent" : 7.701762878104615
+    },
+    {
+      "actor" : 13475.733689391223,
+      "contended" : true,
+      "lock" : 381.2686114382264,
+      "operation" : "Contended long read (count(where:), 256)",
+      "readerWriterLock" : 366.68695919307766,
+      "spreadPercent" : 28.156047380150067
+    },
+    {
+      "actor" : 46936.53125,
+      "contended" : true,
+      "lock" : 1099.553125,
+      "operation" : "Contended long read (count(where:), 1k)",
+      "readerWriterLock" : 307.4640625,
+      "spreadPercent" : 8.907454121889344
+    },
+    {
+      "actor" : 421959.270875,
+      "contended" : true,
+      "lock" : 9235.880125,
       "operation" : "Contended long read (count(where:), 10k)",
-      "readerWriterLock" : 1048.739625,
-      "spreadPercent" : 9.843049752075322
+      "readerWriterLock" : 1043.005125,
+      "spreadPercent" : 9.557551506224213
     },
     {
-      "actor" : 380110.895875,
+      "actor" : 378231.286375,
       "contended" : true,
-      "lock" : 12344.546875,
+      "lock" : 13252.25,
       "operation" : "Contended long read + 10% write",
-      "readerWriterLock" : 2845.963625,
-      "spreadPercent" : 19.43304440512659
+      "readerWriterLock" : 2780.052125,
+      "spreadPercent" : 24.01408660637972
+    },
+    {
+      "actor" : 210345.109375,
+      "contended" : true,
+      "lock" : 7322.015625,
+      "operation" : "Contended long read + 50% write",
+      "readerWriterLock" : 3728.026,
+      "spreadPercent" : 14.562556028310967
     }
   ],
   "runs" : 5,
@@ -190,7 +222,7 @@
     "compiler" : "Swift 6.3, release build",
     "cores" : "14 active (10 performance + 4 efficiency)",
     "cpu" : "Apple M4 Max",
-    "date" : "2026-09-24T23:16:55Z",
+    "date" : "2026-09-24T23:29:02Z",
     "machine" : "Mac16,6",
     "memory" : "36 GB",
     "os" : "macOS Version 26.6.2 (Build 25G83)"
