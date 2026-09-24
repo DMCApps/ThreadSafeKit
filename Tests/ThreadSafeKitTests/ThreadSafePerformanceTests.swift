@@ -31,10 +31,38 @@ func arrayShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
 func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     assertFast("append") { array.append(0) }
+    assertFast("append(contentsOf:)") { array.append(contentsOf: [0]) }
     assertFast("push") { array.push(0) }
     assertFast("pop") { _ = array.pop() }
     assertFast("subscript(index:) set") { array[0] = 0 }
+    assertFast("removeFirst") { array.append(0); _ = array.removeFirst() }
+    assertFast("removeLast") { array.append(0); _ = array.removeLast() }
+    assertFast("reserveCapacity") { array.reserveCapacity(10) }
+    // reverse/sort/shuffle go through generic MutableCollection & RandomAccessCollection dispatch
+    // (vs. append/pop's directly-specialized calls) and shuffle additionally draws from the system
+    // RNG, so all three carry real per-call overhead beyond the 50us ceiling tuned for simple ops —
+    // ceilings widened further to also clear `--sanitize=thread`'s per-call instrumentation cost.
+    assertFast("reverse", maxMicroseconds: 1_500) { array.reverse() }
+    assertFast("sort", maxMicroseconds: 3_000) { array.sort() }
+    assertFast("sort(by:)", maxMicroseconds: 3_000) { array.sort(by: <) }
+    assertFast("shuffle", maxMicroseconds: 10_000) { array.shuffle() }
+    assertFast("insert(at:)") { array.insert(0, at: 0); _ = array.removeFirst() }
     assertFast("mutate") { array.mutate { $0.append(0); $0.removeLast() } }
+}
+
+@Test(arguments: mechanisms)
+func arrayShapeReadOnlyDerivedCollectionsAreFast(mechanism: ThreadSafeMechanism) {
+    let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
+    assertFast("contains") { _ = array.contains(2) }
+    assertFast("firstIndex(where:)") { _ = array.firstIndex(where: { $0 == 2 }) }
+    assertFast("firstIndex(of:)") { _ = array.firstIndex(of: 2) }
+    assertFast("filter") { _ = array.filter { $0 > 1 } }
+    assertFast("compactMap") { _ = array.compactMap { $0 } }
+    assertFast("sorted") { _ = array.sorted() }
+    assertFast("sorted(by:)") { _ = array.sorted(by: <) }
+    assertFast("min/max") { _ = array.min(); _ = array.max() }
+    assertFast("allSatisfy") { _ = array.allSatisfy { $0 > 0 } }
+    assertFast("prefix/suffix") { _ = array.prefix(1); _ = array.suffix(1) }
 }
 
 // MARK: - Dictionary shape
@@ -47,6 +75,12 @@ func dictionaryShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("dictionary") { _ = dictionary.dictionary }
     assertFast("getValue(forKey:)") { _ = dictionary.getValue(forKey: "a") }
     assertFast("subscript(key:) get") { _ = dictionary["a"] }
+    assertFast("keys") { _ = dictionary.keys }
+    assertFast("values") { _ = dictionary.values }
+    assertFast("mapValues") { _ = dictionary.mapValues { $0 } }
+    assertFast("compactMapValues") { _ = dictionary.compactMapValues { $0 } }
+    assertFast("filter") { _ = dictionary.filter { $0.value > 0 } }
+    assertFast("contains(where:)") { _ = dictionary.contains { $0.value > 0 } }
 }
 
 @Test(arguments: mechanisms)
@@ -55,6 +89,7 @@ func dictionaryShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("setValue(_:forKey:)") { dictionary.setValue(1, forKey: "z") }
     assertFast("subscript(key:) set") { dictionary["z"] = 1 }
     assertFast("removeValue(forKey:)") { _ = dictionary.removeValue(forKey: "does-not-exist") }
+    assertFast("updateValue(_:forKey:)") { _ = dictionary.updateValue(1, forKey: "z") }
     assertFast("merge") { dictionary.merge(["y": 1]) { old, _ in old } }
     assertFast("mutate") { dictionary.mutate { $0["z"] = 1 } }
 }
@@ -69,6 +104,14 @@ func setShapeReadsAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("wrappedValue") { _ = set.wrappedValue }
     assertFast("contains") { _ = set.contains(1) }
     assertFast("description") { _ = set.description }
+    assertFast("union") { _ = set.union([4]) }
+    assertFast("intersection") { _ = set.intersection([1]) }
+    assertFast("symmetricDifference") { _ = set.symmetricDifference([4]) }
+    assertFast("isSubset(of:)") { _ = set.isSubset(of: [1, 2, 3, 4]) }
+    assertFast("isSuperset(of:)") { _ = set.isSuperset(of: [1]) }
+    assertFast("isDisjoint(with:)") { _ = set.isDisjoint(with: [4]) }
+    assertFast("isStrictSubset(of:)") { _ = set.isStrictSubset(of: [1, 2, 3, 4]) }
+    assertFast("isStrictSuperset(of:)") { _ = set.isStrictSuperset(of: [1]) }
 }
 
 @Test(arguments: mechanisms)
@@ -76,6 +119,11 @@ func setShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     let set = ThreadSafe(Set([1, 2, 3]), mechanism: mechanism)
     assertFast("insert") { set.insert(0) }
     assertFast("remove") { _ = set.remove(0) }
+    assertFast("update(with:)") { _ = set.update(with: 1) }
+    assertFast("formUnion") { set.formUnion([1]) }
+    assertFast("formIntersection") { set.formIntersection([1, 2, 3]) }
+    assertFast("subtract") { set.subtract([]) }
+    assertFast("formSymmetricDifference") { set.formSymmetricDifference([]) }
     assertFast("mutate") { set.mutate { $0.insert(0); $0.remove(0) } }
 }
 
