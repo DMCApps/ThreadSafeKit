@@ -2,7 +2,7 @@
 
 Swift 6.3 package (`swiftLanguageModes: [.v6]`, iOS 17 / tvOS 17 / macOS 14) of thread-safe wrappers for strict concurrency. Tests use Swift Testing. Pre-1.0 (tagged `0.1.0`), so source-breaking changes are acceptable when justified.
 
-Why it exists: Swift 6 needs shared mutable state to be provably safe. `@ThreadSafe` gives synchronous, atomic access from any thread; the actors give the same API when callers can `await`. README "Which to use" picks between `.lock`, `.readerWriterLock` and the actors.
+Why it exists: to make threading easier on Apple platforms. `async`/`await` can't be used everywhere, so `@ThreadSafe` gives actor-style safety to ordinary values without `await`. Callers use the wrapped `Array`/`Dictionary`/`Set`/value naturally, and every read and write is atomic. The actors offer the same API for callers that can `await`. README "Which to use" picks between `.lock`, `.readerWriterLock` and the actors.
 
 - `ThreadSafe<Value>`: lock-backed class and property wrapper. Shape-specific API comes from constrained extensions in `ThreadSafe+Collection/Array/Dictionary/Set.swift`.
 - `ThreadSafeArray` / `ThreadSafeDictionary` / `ThreadSafeSet` / `ThreadSafeAtomic`: `public final actor`s. Shared members live once in `_ThreadSafeActorStorage` (`ThreadSafeActorStorage.swift`).
