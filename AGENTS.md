@@ -2,7 +2,7 @@
 
 Swift 6.3 package (`swiftLanguageModes: [.v6]`, iOS 17 / tvOS 17 / macOS 14) of thread-safe wrappers for strict concurrency. Tests use Swift Testing. Pre-1.0 (tagged `0.1.0`), so source-breaking changes are acceptable when justified.
 
-Why it exists: to make threading easier on Apple platforms. `async`/`await` can't be used everywhere, so `@ThreadSafe` gives actor-style safety to ordinary values without `await`. Callers use the wrapped `Array`/`Dictionary`/`Set`/value naturally, and every read and write is atomic. The actors offer the same API for callers that can `await`. README "Which to use" picks between `.lock`, `.readerWriterLock` and the actors.
+Why it exists: to make threading easier on Apple platforms. `async`/`await` can't be used everywhere, so `@ThreadSafe` gives actor-style safety to ordinary values without `await`. Callers use the wrapped `Array`/`Dictionary`/`Set`/value naturally, and every read and write is atomic. The actors offer the same API for callers that can `await`. Thread safety and speed are the top priorities. README "Which to use" picks between `.lock`, `.readerWriterLock` and the actors.
 
 - `ThreadSafe<Value>`: lock-backed class and property wrapper. Shape-specific API comes from constrained extensions in `ThreadSafe+Collection/Array/Dictionary/Set.swift`.
 - `ThreadSafeArray` / `ThreadSafeDictionary` / `ThreadSafeSet` / `ThreadSafeAtomic`: `public final actor`s. Shared members live once in `_ThreadSafeActorStorage` (`ThreadSafeActorStorage.swift`).
@@ -33,7 +33,7 @@ Report the test counts. Don't call a task done until all of these pass.
 
 Before proposing a design change (mechanism, conformance, API shape), check `docs/DECISIONS.md` for approaches already tried and rejected.
 
-- Thread safety is the top priority. Every public call is one atomic access. Subscripts use `get` + `_modify` so `ts[i] += 1` and `dict[k]?.append(x)` are atomic. Never split a read-modify-write across two lock acquisitions.
+- Thread safety and speed are the top priorities; when they conflict, safety wins. Every public call is one atomic access. Subscripts use `get` + `_modify` so `ts[i] += 1` and `dict[k]?.append(x)` are atomic. Never split a read-modify-write across two lock acquisitions.
 - Where misuse can be caught at compile time, catch it there (e.g. an `@available(*, unavailable)` setter on `wrappedValue`) rather than only documenting it.
 - Same-thread reentry into an instance must trap deterministically and never hang, under both mechanisms. Cover each new closure-taking member with an exit test.
 - Only mirror the stdlib API: the same names and shapes as `Array`/`Dictionary`/`Set`/`SetAlgebra`/collection protocols. Leave anything uncovered to `mutate`.

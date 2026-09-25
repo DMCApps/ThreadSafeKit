@@ -2,6 +2,8 @@
 
 Thread-safe wrappers that make threading easier on iOS, tvOS and macOS under Swift 6 strict concurrency. `async`/`await` can't be used everywhere, so `@ThreadSafe` gives ordinary values actor-style safety without `await`. You use the wrapped `Array`, `Dictionary`, `Set` or value as you normally would, and every read and write is atomic. When callers can `await`, the actor types offer the same API. Every type is `Sendable`, so shared mutable state can cross isolation domains with no locking at the call site.
 
+Thread safety and speed are the library's top priorities: every operation is atomic, and each one costs as close to the raw stdlib call as the lock allows (see [Benchmarks](#benchmarks)).
+
 **Latest benchmarks:** [Benchmarks/RESULTS.md](Benchmarks/RESULTS.md): per-operation cost of each type and mechanism against the raw stdlib type, with the system they were measured on.
 
 ## Requirements
