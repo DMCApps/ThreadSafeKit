@@ -8,3 +8,5 @@ DerivedData/
 .netrc
 .claude/worktrees
 
+CLAUDE.local.md
+.claude/scratchpads
