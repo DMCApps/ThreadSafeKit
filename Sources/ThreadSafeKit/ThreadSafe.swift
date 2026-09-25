@@ -49,6 +49,11 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // `_modify` can `yield &storage[index]` directly — the lock's state is only reachable inside
     // the closure passed to `withLock`, which can't span a `yield`. `read`/`write`/`beginModify`
     // guard every access to it.
+    //
+    // Deliberately `storage`, not the actors' `_storage`: theirs is public only because
+    // `_ThreadSafeActorStorage` requires it, and is safe because actor isolation guards it. This one
+    // is internal (`@usableFromInline`) and guarded only by the lock, so it must never be public —
+    // outside access would bypass `read`/`write` entirely.
     @usableFromInline
     var storage: Value
 
