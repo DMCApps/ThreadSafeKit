@@ -25,6 +25,16 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // ~40–200ns of generic dispatch on top of the lock (see `ThreadSafeKitBenchmarks`). Everything
     // they touch is `@usableFromInline` for that reason — don't make it `private`, and mark new
     // public members `@inlinable` too.
+    //
+    // The four actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`,
+    // `ThreadSafeAtomic`) follow the same rule and are `public final actor`s for the same reason,
+    // plus one more that's specific to actors: Swift doesn't treat actors as implicitly `final`, so
+    // a call through a captured instance (e.g. inside a `@Sendable` closure passed to a `Task`,
+    // which is how the contended benchmarks and most real callers use them) compiles to a vtable
+    // call into the unspecialized generic method — `@inlinable` alone can't fix that, since the
+    // compiler can't devirtualize and inline a call it can't statically resolve. `final` makes the
+    // call resolvable again. See the doc comment at the top of each actor file for the details;
+    // don't remove `final` from any of them, and don't make their storage `private` again.
     @usableFromInline
     enum Backing {
         case lock(OSAllocatedUnfairLock<Void>)

@@ -1,220 +1,220 @@
 {
   "rows" : [
     {
-      "actor" : 35.61334,
+      "actor" : 24.91375,
       "contended" : false,
-      "lock" : 4.451418,
+      "lock" : 4.51775,
       "operation" : "Array count",
-      "raw" : 5.2685,
-      "readerWriterLock" : 19.873,
-      "spreadPercent" : 15.981848374794394
+      "raw" : 5.740416,
+      "readerWriterLock" : 20.0575,
+      "spreadPercent" : 12.301521775219964
     },
     {
-      "actor" : 34.75041,
+      "actor" : 24.40083,
       "contended" : false,
-      "lock" : 4.464916,
+      "lock" : 4.549582,
       "operation" : "Array a[i] get",
-      "raw" : 5.008416,
-      "readerWriterLock" : 20.204334,
-      "spreadPercent" : 16.77151373060547
+      "raw" : 5.843416,
+      "readerWriterLock" : 20.51625,
+      "spreadPercent" : 7.267498687544636
     },
     {
-      "actor" : 56.13792,
+      "actor" : 29.0875,
       "contended" : false,
-      "lock" : 30.896,
+      "lock" : 30.095084,
       "operation" : "Array a[i] = v",
-      "raw" : 1.983668,
-      "readerWriterLock" : 46.899666,
-      "spreadPercent" : 9.262152926221713
+      "raw" : 2.005334,
+      "readerWriterLock" : 45.995584,
+      "spreadPercent" : 6.3694549459356935
     },
     {
-      "actor" : 30.16917,
+      "actor" : 29.34542,
       "contended" : false,
-      "lock" : 11.628,
+      "lock" : 11.600668,
       "operation" : "Array a[i] += 1",
-      "raw" : 1.97825,
-      "readerWriterLock" : 27.312834,
-      "spreadPercent" : 7.689043687650492
+      "raw" : 2.0115,
+      "readerWriterLock" : 27.542666,
+      "spreadPercent" : 8.211194951135075
     },
     {
-      "actor" : 124.58083,
+      "actor" : 31.41042,
       "contended" : false,
-      "lock" : 19.123084,
+      "lock" : 19.822582,
       "operation" : "Array append + popLast",
-      "raw" : 2.478332,
-      "readerWriterLock" : 50.1575,
-      "spreadPercent" : 9.836718805397714
+      "raw" : 2.459332,
+      "readerWriterLock" : 50.7265,
+      "spreadPercent" : 5.300788719157525
     },
     {
-      "actor" : 31.23291,
+      "actor" : 27.7275,
       "contended" : false,
-      "lock" : 7.633582,
+      "lock" : 7.9975,
       "operation" : "Array elements snapshot",
-      "raw" : 4.867,
-      "readerWriterLock" : 23.585418,
-      "spreadPercent" : 16.42851285281274
+      "raw" : 5.926,
+      "readerWriterLock" : 23.454584,
+      "spreadPercent" : 8.892353860581437
     },
     {
-      "actor" : 2588.515,
+      "actor" : 41.47792,
       "contended" : false,
-      "lock" : 23.480418,
+      "lock" : 23.472666,
       "operation" : "Array contains(where:)",
-      "raw" : 21.093332,
-      "readerWriterLock" : 39.101916,
-      "spreadPercent" : 10.345497256479842
+      "raw" : 22.861666,
+      "readerWriterLock" : 40.053916,
+      "spreadPercent" : 7.724226979585537
     },
     {
-      "actor" : 41.50208,
+      "actor" : 32.7925,
       "contended" : false,
-      "lock" : 8.207416,
+      "lock" : 8.4545,
       "operation" : "Dictionary d[k] get",
-      "raw" : 9.72575,
-      "readerWriterLock" : 24.117334,
-      "spreadPercent" : 6.832259995106862
+      "raw" : 9.5375,
+      "readerWriterLock" : 24.6705,
+      "spreadPercent" : 8.863137973860077
     },
     {
-      "actor" : 74.87584,
+      "actor" : 34.27208,
       "contended" : false,
-      "lock" : 18.18175,
+      "lock" : 18.535916,
       "operation" : "Dictionary d[k] = v",
-      "raw" : 6.70725,
-      "readerWriterLock" : 33.57825,
-      "spreadPercent" : 7.793735528206507
+      "raw" : 6.83,
+      "readerWriterLock" : 33.970418,
+      "spreadPercent" : 5.875774099500239
     },
     {
-      "actor" : 33.0825,
+      "actor" : 32.53166,
       "contended" : false,
-      "lock" : 16.643418,
+      "lock" : 16.654916,
       "operation" : "Dictionary d[k]! += 1",
-      "raw" : 6.091416,
-      "readerWriterLock" : 32.385168,
-      "spreadPercent" : 6.999086742424796
+      "raw" : 6.144334,
+      "readerWriterLock" : 32.56425,
+      "spreadPercent" : 3.193944279386126
     },
     {
-      "actor" : 34.04917,
+      "actor" : 32.65917,
       "contended" : false,
-      "lock" : 16.8425,
+      "lock" : 16.995168,
       "operation" : "Dictionary d[k, default: 0] += 1",
-      "raw" : 9.05725,
-      "readerWriterLock" : 32.407168,
-      "spreadPercent" : 8.509950638081065
+      "raw" : 9.207166,
+      "readerWriterLock" : 32.535584,
+      "spreadPercent" : 4.194870843319045
     },
     {
-      "actor" : 75.53625,
+      "actor" : 33.0575,
       "contended" : false,
-      "lock" : 13.6625,
+      "lock" : 13.682418,
       "operation" : "Dictionary updateValue",
-      "raw" : 7.170916,
-      "readerWriterLock" : 29.34525,
-      "spreadPercent" : 7.56369088694082
+      "raw" : 7.285916,
+      "readerWriterLock" : 29.233584,
+      "spreadPercent" : 7.589079633971119
     },
     {
-      "actor" : 37.3225,
+      "actor" : 27.44542,
       "contended" : false,
-      "lock" : 7.049416,
+      "lock" : 7.226918,
       "operation" : "Set contains",
-      "raw" : 8.55125,
-      "readerWriterLock" : 22.891166,
-      "spreadPercent" : 8.856036429074878
+      "raw" : 8.677332,
+      "readerWriterLock" : 23.17275,
+      "spreadPercent" : 6.516138691486466
     },
     {
-      "actor" : 197.10959,
+      "actor" : 67.56417,
       "contended" : false,
-      "lock" : 26.64725,
+      "lock" : 25.729668,
       "operation" : "Set insert + remove",
-      "raw" : 18.0785,
-      "readerWriterLock" : 70.282416,
-      "spreadPercent" : 22.269652590792667
+      "raw" : 12.559916,
+      "readerWriterLock" : 55.6635,
+      "spreadPercent" : 3.607239932810552
     },
     {
-      "actor" : 27.52833,
+      "actor" : 24.33417,
       "contended" : false,
-      "lock" : 4.425666,
+      "lock" : 4.26075,
       "operation" : "Scalar read",
-      "raw" : 1.684834,
-      "readerWriterLock" : 19.442166,
-      "spreadPercent" : 9.63102374898877
+      "raw" : 1.751916,
+      "readerWriterLock" : 20.212332,
+      "spreadPercent" : 7.873003270709458
     },
     {
-      "actor" : 28.405,
+      "actor" : 24.00292,
       "contended" : false,
-      "lock" : 3.956916,
+      "lock" : 3.75975,
       "operation" : "Scalar mutate { += 1 }",
-      "raw" : 1.236582,
-      "readerWriterLock" : 19.475166,
-      "spreadPercent" : 15.70438303115648
+      "raw" : 1.253334,
+      "readerWriterLock" : 19.726166,
+      "spreadPercent" : 15.315752377152736
     },
     {
-      "actor" : 257.7,
+      "actor" : 236.041675,
       "contended" : true,
-      "lock" : 48.92869875,
+      "lock" : 48.71833375,
       "operation" : "Contended 90% read \/ 10% write",
-      "readerWriterLock" : 1320.56453125,
-      "spreadPercent" : 13.50522074306999
+      "readerWriterLock" : 1425.5865625,
+      "spreadPercent" : 15.777801737765163
     },
     {
-      "actor" : 276.7453125,
+      "actor" : 261.8276,
       "contended" : true,
-      "lock" : 47.03265625,
+      "lock" : 43.68734375,
       "operation" : "Contended 100% read",
-      "readerWriterLock" : 339.10604125,
-      "spreadPercent" : 8.913466374759555
+      "readerWriterLock" : 325.8418225,
+      "spreadPercent" : 24.83914749337445
     },
     {
-      "actor" : 277.7515625,
+      "actor" : 16.8890625,
       "contended" : true,
-      "lock" : 79.00171875,
+      "lock" : 80.00828125,
       "operation" : "Contended 100% write (a[i] += 1)",
-      "readerWriterLock" : 2282.7113025,
-      "spreadPercent" : 10.010627752994202
+      "readerWriterLock" : 2295.60677125,
+      "spreadPercent" : 6.547062632991025
     },
     {
-      "actor" : 3826.6415,
+      "actor" : 283.3311664,
       "contended" : true,
-      "lock" : 146.0388664,
+      "lock" : 150.5286,
       "operation" : "Contended long read (count(where:), 64)",
-      "readerWriterLock" : 378.3907,
-      "spreadPercent" : 7.701762878104615
+      "readerWriterLock" : 385.5727672,
+      "spreadPercent" : 6.66851001252929
     },
     {
-      "actor" : 13475.733689391223,
+      "actor" : 373.7829188213609,
       "contended" : true,
-      "lock" : 381.2686114382264,
+      "lock" : 452.6015244995136,
       "operation" : "Contended long read (count(where:), 256)",
-      "readerWriterLock" : 366.68695919307766,
-      "spreadPercent" : 28.156047380150067
+      "readerWriterLock" : 366.4925567047258,
+      "spreadPercent" : 21.582674971548656
     },
     {
-      "actor" : 46936.53125,
+      "actor" : 654.85,
       "contended" : true,
-      "lock" : 1099.553125,
+      "lock" : 1098.109375,
       "operation" : "Contended long read (count(where:), 1k)",
-      "readerWriterLock" : 307.4640625,
-      "spreadPercent" : 8.907454121889344
+      "readerWriterLock" : 309.6739625,
+      "spreadPercent" : 13.24040118484291
     },
     {
-      "actor" : 421959.270875,
+      "actor" : 4108.323,
       "contended" : true,
-      "lock" : 9235.880125,
+      "lock" : 8504.838625,
       "operation" : "Contended long read (count(where:), 10k)",
-      "readerWriterLock" : 1043.005125,
-      "spreadPercent" : 9.557551506224213
+      "readerWriterLock" : 1046.604125,
+      "spreadPercent" : 8.602577982483469
     },
     {
-      "actor" : 378231.286375,
+      "actor" : 3627.546875,
       "contended" : true,
-      "lock" : 13252.25,
+      "lock" : 12353.588625,
       "operation" : "Contended long read + 10% write",
-      "readerWriterLock" : 2780.052125,
-      "spreadPercent" : 24.01408660637972
+      "readerWriterLock" : 2997.9375,
+      "spreadPercent" : 20.145796068130178
     },
     {
-      "actor" : 210345.109375,
+      "actor" : 2127.849,
       "contended" : true,
-      "lock" : 7322.015625,
+      "lock" : 6879.338625,
       "operation" : "Contended long read + 50% write",
-      "readerWriterLock" : 3728.026,
-      "spreadPercent" : 14.562556028310967
+      "readerWriterLock" : 3436.833375,
+      "spreadPercent" : 18.51570706420995
     }
   ],
   "runs" : 5,
@@ -222,7 +222,7 @@
     "compiler" : "Swift 6.3, release build",
     "cores" : "14 active (10 performance + 4 efficiency)",
     "cpu" : "Apple M4 Max",
-    "date" : "2026-09-24T23:29:02Z",
+    "date" : "2026-09-25T01:56:19Z",
     "machine" : "Mac16,6",
     "memory" : "36 GB",
     "os" : "macOS Version 26.6.2 (Build 25G83)"
