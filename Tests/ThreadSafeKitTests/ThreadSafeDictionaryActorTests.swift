@@ -112,10 +112,7 @@ import Testing
     #expect(await dictionary.count == concurrencyIterations)
 }
 
-// Interleaves reads with writes (not just writes vs writes), proving mixed
-// operations don't deadlock or corrupt state under actor reentrancy. A real
-// race here is caught by Thread Sanitizer (`swift test --sanitize=thread`),
-// not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test func dictionaryActorConcurrentReadsDuringWritesDoNotRace() async throws {
     let dictionary = ThreadSafeDictionary<Int, Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -144,9 +141,7 @@ import Testing
     #expect(await dictionary.dictionary == ["b": 2])
 }
 
-// Each task reads the current counter value then writes back the increment
-// (check-then-act). If `mutate` didn't hold the actor for the whole closure,
-// concurrent increments could race and lose updates.
+// Check-then-act increments inside `mutate` must not lose updates.
 @Test func dictionaryActorMutateIsAtomicAcrossCompoundOperations() async throws {
     let dictionary = ThreadSafeDictionary<String, Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -167,8 +162,7 @@ import Testing
     #expect(await dictionary["missing", default: 0] == 0)
 }
 
-// `subscript(key:default:)` is get-only on the actor (see its doc comment); atomic default-and-
-// update goes through `mutate` instead — many concurrent increments there must still sum exactly.
+// The actor's default subscript is get-only, so concurrent default-and-update goes through `mutate`.
 @Test func dictionaryActorSubscriptDefaultViaMutateIsAtomic() async throws {
     let dictionary = ThreadSafeDictionary<String, Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -219,8 +213,7 @@ import Testing
     #expect(await dictionary.dictionary == ["a": 1, "b": 2])
 }
 
-// Concurrent `reserveCapacity` calls interleaved with concurrent writes must not corrupt or
-// drop any write — `reserveCapacity` only affects unobservable storage capacity.
+// Concurrent `reserveCapacity` must not drop concurrent writes.
 @Test func dictionaryActorConcurrentReserveCapacityDoesNotCorruptConcurrentWrites() async throws {
     let dictionary = ThreadSafeDictionary<Int, Int>()
     let n = concurrencyIterations
@@ -243,8 +236,7 @@ import Testing
     #expect(await dictionary.dictionary == ["a": 2, "b": 3])
 }
 
-// Each task merges a disjoint key range, so no `uniquingKeysWith` collision is ever exercised
-// concurrently — this is purely a lost-write check for the sequence-of-pairs overload.
+// Disjoint key ranges, so this only checks for lost writes.
 @Test func dictionaryActorConcurrentMergeSequenceOfPairsPreservesEveryEntry() async throws {
     let dictionary = ThreadSafeDictionary<Int, Int>()
     let writers = 8

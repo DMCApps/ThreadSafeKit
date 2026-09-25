@@ -1,34 +1,22 @@
-// Per-operation cost of ThreadSafeKit vs. the raw stdlib type it wraps, compared against the
-// previous run.
+// Per-operation cost of ThreadSafeKit vs. the raw stdlib type, compared against the previous run.
 //
 //     swift run -c release ThreadSafeKitBenchmarks [--runs <n>] [--output <path>] [--baseline <path>]
 //                                                  [--threshold <percent>] [--strict]
 //
-//     --runs <n>             Repeat the whole suite n times and report the median (default: 5).
-//     --output <path>        Also write the report to <path> (Markdown) and its raw numbers to the
-//                            same path with a .json extension. The committed copies are
-//                            Benchmarks/RESULTS.md and Benchmarks/RESULTS.json.
-//     --readme <path>        Also replace the section between `<!-- BENCHMARKS:START -->` and
-//                            `<!-- BENCHMARKS:END -->` in <path> (the README) with the results table.
+//     --runs <n>             Suite repetitions to take the median of (default: 5).
+//     --output <path>        Also write Markdown to <path> and JSON alongside it.
+//     --readme <path>        Replace the BENCHMARKS:START/END section in <path>.
 //     --baseline <path>      Previous run to compare against (default: Benchmarks/RESULTS.json).
-//     --render <path>        Don't run anything: rewrite the --readme section from a saved results
-//                            file, e.g. `--render Benchmarks/RESULTS.json --readme README.md`.
+//     --render <path>        Rewrite the --readme section from a saved results file without running.
 //     --threshold <percent>  Deviation that gets flagged (default: 30).
 //     --strict               Exit with status 1 if any column is flagged SLOWER.
-//
-// Each figure is the median across runs of the minimum per-call average over several batches:
-// the in-run minimum filters out batches inflated by preemption, and the median across whole runs
-// ignores an outlier run without having to pick a cutoff. There's no absolute pass/fail: a change is flagged when a column moves
-// more than the threshold (and more than a few ns) against the baseline, so it can be investigated.
-// Baselines are only compared when they came from the same machine and CPU.
 
 import Dispatch
 import Foundation
 import os
 import ThreadSafeKit
 
-/// Exits in debug builds. A function (not top-level `#if DEBUG ... exit`) so the code below
-/// isn't flagged as unreachable when building debug, e.g. via `swift build --build-tests`.
+/// Exits in debug builds; a function so the code below isn't flagged unreachable.
 func refuseDebugBuild() {
     #if DEBUG
     print("ThreadSafeKitBenchmarks: build with `-c release` — debug numbers are meaningless.")
@@ -50,9 +38,7 @@ let minimumDeltaNs = 5.0
 @inline(never) @_optimize(none)
 func blackHole<T>(_ value: T) {}
 
-/// Hides `value` from the optimizer, so work on it can't be hoisted out of the timing loop.
-/// Without this, raw reads like `array.count` get hoisted and measure as ~0 ns. `@_optimize(none)`
-/// stops the optimizer from proving this is an identity function and seeing through the call.
+/// Opaque identity (`@_optimize(none)`) so the optimizer can't hoist work out of the timing loop.
 @inline(never) @_optimize(none)
 func opaque<T>(_ value: T) -> T { value }
 
@@ -84,8 +70,7 @@ func measure(ops: Int = actorOps, _ body: () async -> Void) async -> Double {
     return best
 }
 
-/// Wall-clock ns per operation (total time / total ops) with `contendedWorkers` threads each
-/// calling `body(iteration)` `ops` times. Minimum over a few runs.
+/// Wall-clock ns per op with `contendedWorkers` threads sharing `body`, minimum over a few runs.
 func measureContended(ops: Int = contendedOpsPerWorker, _ body: @Sendable @escaping (Int) -> Void) -> Double {
     var best = Double.infinity
     for _ in 0..<3 {
@@ -99,9 +84,7 @@ func measureContended(ops: Int = contendedOpsPerWorker, _ body: @Sendable @escap
     return best
 }
 
-/// Actor counterpart of `measureContended`: `contendedWorkers` concurrent tasks, each doing a
-/// tenth of the synchronous per-worker count by default (actor calls are slower, so this keeps
-/// runtime sane).
+/// Actor counterpart of `measureContended`, defaulting to a tenth of the ops since actor calls are slower.
 func measureContended(ops opsPerWorker: Int = contendedOpsPerWorker / 10, _ body: @Sendable @escaping (Int) async -> Void) async -> Double {
     var best = Double.infinity
     for _ in 0..<3 {
@@ -126,8 +109,7 @@ struct Row: Codable {
     let lock: Double?
     let readerWriterLock: Double?
     let contended: Bool
-    /// Largest run-to-run spread, (max − min) / median in percent, across the compared columns.
-    /// How much of a baseline change could just be noise. Nil for a single run.
+    /// Largest run-to-run spread in percent across compared columns, or nil for a single run.
     var spreadPercent: Double? = nil
 }
 
@@ -187,8 +169,7 @@ struct Snapshot: Codable {
     var runs: Int? = nil
 }
 
-/// The columns compared against the baseline. Raw isn't one: it measures the stdlib, not this
-/// library, so it's shown for context only.
+/// Columns compared against the baseline; raw is context only since it measures the stdlib.
 let comparedColumns: [(name: String, keyPath: KeyPath<Row, Double?> & Sendable)] = [
     ("actor", \.actor),
     (".lock", \.lock),
@@ -199,9 +180,7 @@ func percentChange(_ current: Double, from previous: Double) -> Double {
     (current - previous) / previous * 100
 }
 
-/// "SLOWER"/"FASTER" flags for `row` against `previous`; empty when nothing moved enough. A change
-/// must exceed the threshold, the two runs' combined run-to-run spread (so a noisy baseline row
-/// doesn't produce a false flag), and `minimumDeltaNs`.
+/// "SLOWER"/"FASTER" flags for changes exceeding the threshold, combined run spread, and `minimumDeltaNs`.
 func flags(for row: Row, against previous: Row, thresholdPercent: Double) -> (slower: [String], faster: [String]) {
     var slower: [String] = []
     var faster: [String] = []
@@ -216,8 +195,7 @@ func flags(for row: Row, against previous: Row, thresholdPercent: Double) -> (sl
     return (slower, faster)
 }
 
-/// `rows` as a Markdown table: readable in a terminal, and by agents via `--output`. With a
-/// baseline, each figure shows its change and the last column says whether anything moved.
+/// `rows` as a Markdown table, with per-figure deltas when a baseline is given.
 func markdownTable(_ rows: [Row], baseline: [String: Row]?, thresholdPercent: Double) -> String {
     let headers = ["Operation", "Raw", "actor", ".lock", ".readerWriterLock", "Spread"] + (baseline == nil ? [] : ["vs. baseline"])
     func cell(_ value: Double?, _ previous: Double?) -> String {
@@ -272,9 +250,7 @@ func markdownTable(_ rows: [Row], baseline: [String: Row]?, thresholdPercent: Do
 
 let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
-// Wrapped in a function: top-level `main.swift` globals are main-actor isolated, and sending a
-// closure from that context into an actor method trips region-isolation checking. Ordinary
-// `@MainActor` functions don't hit this; it's specific to top-level script code.
+// A function because main-actor globals trip region-isolation checks when sending closures to actors.
 func runBenchmarks() async -> [Row] {
     var rows: [Row] = []
     func add(_ operation: String, raw: Double?, actor: Double?, wrapped: [Double], contended: Bool = false) {
@@ -409,10 +385,7 @@ func runBenchmarks() async -> [Row] {
             },
             contended: true)
 
-        // Long critical sections: each read scans the whole array, so readers hold the lock far
-        // longer than a subscript does. This is the case a reader-writer lock is built for. The
-        // sizes find where it starts to pay off; each size scans the same total number of
-        // elements per worker (`ops` × size), so every row takes about as long to run.
+        // Whole-array scans hold the lock long, the case reader-writer locks target; sizes keep total work per row equal.
         func longReadOps(_ size: Int) -> Int { 10_000_000 / size }
         func addLongRead(_ label: String, size: Int) async {
             let values = Array(0..<size)
@@ -432,8 +405,7 @@ func runBenchmarks() async -> [Row] {
         await addLongRead("1k", size: 1_000)
         await addLongRead("10k", size: 10_000)
 
-        // 10k-element long reads with 1 in `writeEvery` operations a write: parallel readers
-        // only pay off if writers don't serialize everything.
+        // 10k-element scans with every `writeEvery`th operation a write.
         func addLongReadWithWrites(_ percent: Int, writeEvery: Int) async {
             let values = Array(0..<10_000)
             let actor = ThreadSafeArray(values)
@@ -533,8 +505,7 @@ func compilerVersion() -> String {
     #endif
 }
 
-/// The system the numbers came from. Results depend heavily on the machine (CPU, core count and
-/// type), so baselines are only compared when they came from the same machine and CPU.
+/// The system the numbers came from; baselines only compare on the same machine and CPU.
 func currentSystem() -> SystemInfo {
     let info = ProcessInfo.processInfo
     let performanceCores = sysctlInt("hw.perflevel0.physicalcpu")
@@ -649,8 +620,7 @@ if let path = options.outputPath {
     }
 }
 
-/// The README copy: the table without baseline deltas, plus a short legend. GitHub Markdown can't
-/// include another file, so the section between the markers is regenerated in place instead.
+/// README table without deltas, regenerated between markers since GitHub Markdown can't include files.
 func updateReadme(at path: String, rows: [Row], system: SystemInfo, runs: Int) {
     let startMarker = "<!-- BENCHMARKS:START -->"
     let endMarker = "<!-- BENCHMARKS:END -->"

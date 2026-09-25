@@ -29,8 +29,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(ThreadSafe(wrappedValue: 1) != ThreadSafe(wrappedValue: 2))
 }
 
-// Auto-synthesized Equatable on a containing type only compiles because
-// ThreadSafe<Int> conforms to Equatable; this is the whole point of the feature.
+// Compiles only because `ThreadSafe<Int>` is Equatable.
 @Test func threadSafeAtomicEquatableInsideContainingType() throws {
     struct Container: Equatable {
         let counter: ThreadSafe<Int>

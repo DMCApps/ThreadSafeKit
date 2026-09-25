@@ -3,10 +3,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Coverage added during code review of the ThreadSafe<Value> unification.
-// Closes gaps the existing suite left open: rethrows/error-unwind, the `.lock`
-// storage duplicate, real content-asserting concurrency stress, reentrancy
-// behaviour, and the genuine `init(_ sequence:)` overload.
+// Error-unwind, retention, content-asserting stress, reentrancy, and sequence-init coverage.
 
 private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
@@ -21,11 +18,9 @@ func equalValuesCompareEqualAcrossMechanisms() {
     #expect(a == b)
 }
 
-// MARK: - rethrows: the lock/queue must be released when the body throws
+// MARK: - rethrows: the lock must be released when the body throws
 
-// The whole suite never throws from a `forEach`/`map`/`reduce`/`merge`/`mutate`
-// closure, so the error-unwind path was entirely uncovered. If any of these
-// failed to release, the follow-up read would deadlock rather than fail.
+// If release-on-throw broke, the follow-up read would deadlock.
 
 @Test(arguments: mechanisms)
 func mutateReleasesLockWhenBodyThrows(mechanism: ThreadSafeMechanism) {
@@ -36,7 +31,7 @@ func mutateReleasesLockWhenBodyThrows(mechanism: ThreadSafeMechanism) {
             throw Boom()
         }
     }
-    // Partial mutation before the throw is kept — `mutate` is not transactional.
+    // Pre-throw mutation is kept; `mutate` isn't transactional.
     #expect(array.elements == [1, 2, 3, 4])
 }
 
@@ -100,7 +95,7 @@ func removeAllKeepingCapacity(mechanism: ThreadSafeMechanism) {
 
 @Test(arguments: mechanisms)
 func reduceOnArrayShape(mechanism: ThreadSafeMechanism) {
-    // `reduce(into:)` was only ever exercised on the dictionary shape.
+    // Covers `reduce(into:)` on the array shape.
     let array = ThreadSafe([1, 2, 3, 4], mechanism: mechanism)
     let sum = array.reduce(into: 0) { $0 += $1 }
     #expect(sum == 10)
@@ -108,8 +103,7 @@ func reduceOnArrayShape(mechanism: ThreadSafeMechanism) {
 
 @Test(arguments: mechanisms)
 func sequenceInitIsDistinctFromValueInit(mechanism: ThreadSafeMechanism) {
-    // `ThreadSafe([1, 2, 3])` resolves to `init(_ value: Value)`, NOT the
-    // sequence init. A non-Array Sequence is the only way to reach the latter.
+    // Array literals pick `init(_ value:)`, so a non-Array sequence is needed to reach the sequence init.
     let fromRange = ThreadSafe<[Int]>(0..<5, mechanism: mechanism)
     #expect(fromRange.elements == [0, 1, 2, 3, 4])
 
@@ -154,8 +148,7 @@ func mutateAcceptsOldVoidReturningCallShapes(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Concurrency stress that asserts on CONTENT, not just count
 
-// The existing concurrency tests assert only `count == 2000` and discard every
-// read. These assert the full element set and validate each read snapshot.
+// These assert full contents and validate every read snapshot.
 
 @Test(arguments: mechanisms)
 func concurrentAppendsPreserveEveryElement(mechanism: ThreadSafeMechanism) {
@@ -171,8 +164,7 @@ func concurrentAppendsPreserveEveryElement(mechanism: ThreadSafeMechanism) {
 
 @Test(arguments: mechanisms)
 func concurrentReadSnapshotsAreInternallyConsistent(mechanism: ThreadSafeMechanism) {
-    // Every snapshot taken mid-write must be a valid prefix-set, never a torn
-    // or duplicated buffer. This is the read-during-write case with assertions.
+    // Mid-write snapshots must be valid, untorn buffers.
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: 16) { i in
         if i % 2 == 0 {
@@ -199,7 +191,7 @@ func concurrentDictionaryWritesPreserveEveryEntry(mechanism: ThreadSafeMechanism
         }
     }
     #expect(dictionary.count == writers * perWriter)
-    // Values, not just keys — the existing tests never check these.
+    // Checks values, not just keys.
     #expect(dictionary.dictionary.allSatisfy { $0.value == $0.key * 2 })
 }
 
@@ -220,13 +212,7 @@ func concurrentAtomicReadModifyWriteLosesNothing(mechanism: ThreadSafeMechanism)
 
 @Test(arguments: mechanisms)
 func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism) {
-    // Exercises append/pop/map/count/subscript all at once so the barrier discipline is tested
-    // against more than one write member. `array.count == array.elements.count` is true by
-    // construction (both just read `storage`) and proves nothing, so instead: track successful
-    // pops via a separate thread-safe counter (`popLast()`'s success is inherently racy — the
-    // array can run dry mid-test once appends stop outpacing pops), derive the exact expected
-    // count from that, and confirm every surviving element traces back to either the initial
-    // range or an appended value — a torn write would produce something outside both.
+    // Mixed writes must leave only seed or appended values, with the count matching successful pops.
     let initial = Array(0..<500)
     let array = ThreadSafe(initial, mechanism: mechanism)
     let successfulPops = ThreadSafe(0, mechanism: .lock)
@@ -236,7 +222,7 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
     DispatchQueue.concurrentPerform(iterations: 64) { i in
         switch i % 4 {
         case 0:
-            // Offset past `initial` so appended values are distinguishable from the seed range.
+            // Offset so appended values differ from the seed range.
             for _ in 0..<200 { array.append(1_000 + i) }
         case 1:
             for _ in 0..<200 {
@@ -259,42 +245,10 @@ func concurrentMixedShapeOperationsStayConsistent(mechanism: ThreadSafeMechanism
 
 // MARK: - Reentrancy
 
-// Both mechanisms trap same-thread reentrancy deterministically via `ReentrancyTracker`
-// (ThreadSafe.swift) — checked, and its process-terminating side effect performed, *before*
-// attempting to acquire any lock, so a reentrant call always aborts instead of ever having a
-// chance to hang:
-//
-//   nested read  inside read   -> traps, both mechanisms. `pthread_rwlock_rdlock` doesn't
-//                                  reliably self-detect same-thread recursion, so without
-//                                  `ReentrancyTracker` a nested read could deadlock the instant a
-//                                  writer queued between the two reads.
-//   nested read  inside write  -> traps, both mechanisms
-//   nested write inside write  -> traps, both mechanisms
-//   nested write inside read   -> traps, both mechanisms
-//   reentrant subscript `_modify` (nested inside another access, or inside its own yielded
-//   mutation, e.g. a mutating operation whose argument reads the same instance) -> traps, both
-//   mechanisms.
-//
-// None of these hang — every mechanism aborts the process right away. This is inherent to
-// lock mutual exclusion, not a bug: `mutate`/`write`/a subscript's in-place modify intentionally
-// hold the lock across the whole operation, so calling back into the same instance from inside
-// one is always unsafe. Swift Testing's exit tests let these be real, passing regression tests
-// instead of permanently-disabled documentation — each just confirms the process terminates
-// abnormally (and quickly, well under the time limit) rather than hanging.
+// Same-thread reentrancy traps: natively under `.lock`, via `ReentrancyTracker` under `.readerWriterLock`.
 
 #if os(macOS)
-// `#expect(processExitsWith:)`'s closure is re-invoked in a freshly-spawned child process, so it
-// can't capture runtime state from the parent (a `swift-frontend` limitation, not a design
-// choice here) — `@Test(arguments:)` parameterization doesn't work for these, hence one explicit,
-// literal function per mechanism rather than a single parameterized one.
-//
-// Kept intentionally lean: running dozens of these concurrently (each forks/re-execs a whole new
-// process) alongside the rest of the suite's own heavy concurrency stress tests was observed to
-// exhaust the test runner's own cooperative thread pool under load, causing an intermittent hang
-// or spurious crash unrelated to the actual behaviour under test. The four base combinations are
-// exhaustively covered per mechanism; the modify/bounds-checking additions below are each
-// covered once broadly (both mechanisms) or once representatively (`.lock` only, where the
-// mechanism doesn't change what's being proven) rather than the full cross product.
+// Exit tests can't capture state, so one function per mechanism, kept few to avoid exhausting the runner's threads.
 
 @Test(.timeLimit(.minutes(1)))
 func reentrantReadInsideReadAbortsOnLock() async {
@@ -370,10 +324,7 @@ func reentrantWriteInsideReadAbortsOnReaderWriterLock() async {
     }
 }
 
-// A predicate that reads the same instance mid-`removeAll(where:)` is a write-inside-write
-// reentry (the predicate itself doesn't hold the lock, but `removeAll(where:)`'s outer `write`
-// already does) — must trap deterministically, not hang, exactly like the other reentrant-write
-// cases above.
+// A predicate reading the instance mid-`removeAll(where:)` is write-in-write reentry and must trap.
 @Test(.timeLimit(.minutes(1)))
 func reentrantRemoveAllWhereAbortsOnLock() async {
     await #expect(processExitsWith: .failure) {
@@ -390,13 +341,7 @@ func reentrantRemoveAllWhereAbortsOnReaderWriterLock() async {
     }
 }
 
-// Reentrancy from one subscript modify into another, both on the same instance, via a mutating
-// method call: Swift calls a mutating method on `array[0]` by materializing its address once
-// (via `_modify`), invoking the method on that address, then finalizing — so the method body,
-// which performs `array[1].value += 1` (itself a full `_modify` access on the same array), runs
-// entirely inside `array[0]`'s own modify access. (Unlike `array[0] += array.count`, which
-// measurably does NOT reproduce this: Swift evaluates `+=`'s RHS *before* starting the LHS's
-// `_modify` access, so that expression never actually nests.)
+// A mutating method on `array[0]` that modifies `array[1]` nests two `_modify` accesses, unlike `array[0] += array.count`.
 private struct ReentrancyProbe {
     var value: Int
 
@@ -422,10 +367,7 @@ func reentrantModifyInsideModifyAbortsOnReaderWriterLock() async {
     }
 }
 
-// Reentry exit tests for the dictionary- and set-shaped extensions (ThreadSafe+Dictionary.swift,
-// ThreadSafe+Set.swift), under `.readerWriterLock` only — the existing reentrancy coverage above
-// is array-only, and the tracker doesn't know or care about `Value`'s shape, but this closes the
-// gap on the record.
+// Reentry traps for dictionary and set shapes under `.readerWriterLock`.
 @Test(.timeLimit(.minutes(1)))
 func reentrantWriteInsideWriteAbortsOnReaderWriterLock_Dictionary() async {
     await #expect(processExitsWith: .failure) {
@@ -449,10 +391,7 @@ func reentrantWriteInsideWriteAbortsOnReaderWriterLock_Set() async {
 
 // MARK: - Reentrancy: nesting distinct instances (must never trap)
 
-// Nesting *different* instances on the same thread must succeed regardless of how deep — even
-// deeper than ReentrancyTracker's inline buffer capacity (4), which forces its heap-array
-// overflow path. Covers both mechanisms: `.lock` never tracks at all, `.readerWriterLock` tracks
-// via `ReentrancyTracker`, and neither should trap here.
+// Nesting distinct instances must work at any depth, including past the tracker's inline capacity.
 @Test(arguments: mechanisms)
 func nestingManyDistinctInstancesOnSameThreadNeverTraps(mechanism: ThreadSafeMechanism) {
     let counters = (0..<6).map { _ in ThreadSafe(0, mechanism: mechanism) }
@@ -471,9 +410,7 @@ func nestingManyDistinctInstancesOnSameThreadNeverTraps(mechanism: ThreadSafeMec
     }
 }
 
-// A body throwing partway through a nested access must not leave a stale tracker entry behind —
-// the next access to either instance must succeed, not falsely trap. `.readerWriterLock` only:
-// `.lock` never touches the tracker, so it has nothing to clean up here.
+// A throw inside a nested access must not leave a stale tracker entry.
 @Test
 func nestedThrowLeavesNoStaleTrackerEntryOnReaderWriterLock() {
     let outer = ThreadSafe(0, mechanism: .readerWriterLock)
@@ -493,9 +430,7 @@ func nestedThrowLeavesNoStaleTrackerEntryOnReaderWriterLock() {
     #expect(inner.wrappedValue == 1)
 }
 
-// Many threads, each nesting 2-3 distinct instances, under `.readerWriterLock`: no false traps,
-// no deadlocks, and every increment lands — the tracker's per-thread state must never leak or
-// collide across threads under real contention.
+// Concurrent per-thread nesting must never leak or collide tracker state.
 @Test(.timeLimit(.minutes(1)))
 func concurrentNestingOfDifferentInstancesNeverFalseTrapsOnReaderWriterLock() {
     let a = ThreadSafe(0, mechanism: .readerWriterLock)
@@ -525,10 +460,7 @@ func concurrentNestingOfDifferentInstancesNeverFalseTrapsOnReaderWriterLock() {
 #if os(macOS)
 // MARK: - Subscript bounds checking
 
-// An out-of-bounds index traps via `Array`'s own bounds check, for both the `get` and the
-// `_modify` accessor — `beginModify()` has already acquired the lock by the time `storage[index]`
-// traps, but that's fine: the process terminates right here, so the lock's final state is moot.
-// `.lock` only: which mechanism guards the access doesn't change `Array`'s own bounds check.
+// Out-of-bounds index traps via `Array`'s own bounds check.
 
 @Test(.timeLimit(.minutes(1)))
 func subscriptGetOutOfBoundsTraps() async {
@@ -547,33 +479,10 @@ func subscriptModifyOutOfBoundsTraps() async {
 }
 
 // MARK: - Async inout hazard
-//
-// `await someAsyncFunc(&ts[i])` compiles under Swift 6 strict concurrency — confirmed with
-// `swiftc -swift-version 6 -typecheck` against a real call site — so the compiler does not reject
-// holding a subscript's `_modify` open across a suspension point. If the suspended task resumes
-// on a different thread, unlocking from a different thread than the one that locked is undefined
-// behavior for both `os_unfair_lock` and `pthread_rwlock` — `modifyOwnerThread` (ThreadSafe.swift)
-// traps deterministically instead of risking it.
-//
-// Not exercised as an exit test here: reproducing it needs a *genuine* cross-thread resumption
-// (`Task.yield()`, and resuming a checked continuation from a `DispatchQueue.global()`/detached
-// `Thread`, were all tried), and every one of them was reliable in a standalone executable but
-// consistently failed to reproduce inside this exit test's own forked child process — the
-// runner's execution context there is apparently constrained enough that the continuation kept
-// resuming on the same thread that suspended it, making a from-inside-the-suite exit test for
-// this specific case flaky by construction. Verified instead with a standalone script
-// (`Thread.detachNewThread` resuming a checked continuation after `array[0] += 1`, matching
-// ThreadSafe.swift's `modifyOwnerThread` comment): 8/8 runs trapped with the expected message.
+// `modifyOwnerThread` traps cross-thread resumption, but it can't be reproduced reliably in a forked child, so there's no exit test.
 #endif
 
-// Note: ThreadSafe used to conform to Hashable (forwarding hash(into:) to wrappedValue's live,
-// mutable contents), which corrupted Set/Dictionary-key membership the moment a member was
-// mutated after insertion — Set never re-buckets an existing member, so its hash must never
-// change while it's a member, and a reference type's mutable contents can't offer that guarantee
-// the way a value type's CoW does. Hashable was removed entirely (ThreadSafe+Conformances.swift)
-// rather than patched, since nothing in this codebase had a real need for ThreadSafe instances
-// themselves as Set elements/Dictionary keys — Equatable (value-based, kept) has no such
-// invariant to violate. To deduplicate/hash by content: `Set(instances.map(\.wrappedValue))`.
+// ThreadSafe is intentionally not Hashable; see ThreadSafe+Conformances.swift.
 
 // MARK: - `.lock` mechanism must not retain a duplicate of the initial value
 
@@ -617,7 +526,7 @@ func lockMechanismDoesNotRetainInitialValue() {
 
     subject.removeAll()
     #expect(subject.isEmpty)
-    // The lock's copy is now empty, so nothing should reference the canary.
+    // Emptied storage must release the canary.
     #expect(Canary.liveCount == 0, "`storage` is holding a stale duplicate of the initial value")
 }
 
@@ -625,10 +534,7 @@ func lockMechanismDoesNotRetainInitialValue() {
 
 @Test
 func multiEntryDictionaryDescriptionIsOrderDependent() {
-    // The only existing description test uses a single entry, which hides the
-    // fact that `description` interpolates a Dictionary and is therefore
-    // nondeterministically ordered. Documented here so nobody writes an
-    // exact-match assertion against a multi-entry dictionary.
+    // Multi-entry dictionary descriptions are unordered, so only check contents.
     let dictionary = ThreadSafe(["a": 1, "b": 2])
     let rendered = dictionary.description
     #expect(rendered.hasPrefix("ThreadSafe(["))

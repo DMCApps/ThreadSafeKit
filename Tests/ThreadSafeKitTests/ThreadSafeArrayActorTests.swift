@@ -67,8 +67,7 @@ import Testing
 
 private struct ArrayActorRemoveAllBoom: Error {}
 
-// Mirrors the ThreadSafe-shape test of the same shape: `Array.removeAll(where:)` isn't
-// transactional and may reorder in place before the throw, so only count/set are asserted.
+// `removeAll(where:)` may reorder before throwing, so only count and contents are asserted.
 @Test func arrayActorRemoveAllWhereThrowsPropagatesErrorAndKeepsPartialMutation() async throws {
     let array = ThreadSafeArray([1, 2, 3, 4, 5, 6])
     await #expect(throws: ArrayActorRemoveAllBoom.self) {
@@ -79,13 +78,12 @@ private struct ArrayActorRemoveAllBoom: Error {}
     }
     #expect(await array.count == 6)
     #expect(Set(await array.elements) == Set([1, 2, 3, 4, 5, 6]))
-    // A follow-up call succeeding is the proof the actor wasn't left in a bad state.
+    // Follow-up call proves the actor is still usable.
     await array.append(7)
     #expect(await array.count == 7)
 }
 
-// Concurrent `removeAll(where:)` calls (one residue class per task) alongside concurrent
-// appends of values >= N: every original value must be gone, every appended value must survive.
+// Every original value must be removed and every concurrently appended value kept.
 @Test func arrayActorConcurrentRemoveAllWhereAlongsideAppendsIsExact() async throws {
     let n = 600
     let k = 4
@@ -123,8 +121,6 @@ private struct ArrayActorRemoveAllBoom: Error {}
     #expect(await array.elements == [1, 2, 3, 4])
 }
 
-// removeFirst()/removeLast() trap on an empty collection (unlike popLast(), the non-trapping variant),
-// so they're a distinct, worthwhile addition rather than a duplicate of popLast().
 @Test func arrayActorRemoveFirst() async throws {
     let array = ThreadSafeArray([1, 2, 3])
     #expect(await array.removeFirst() == 1)
@@ -279,10 +275,7 @@ private struct ArrayActorRemoveAllBoom: Error {}
     #expect(await array.count == concurrencyIterations)
 }
 
-// Interleaves reads with writes (not just writes vs writes), proving mixed
-// operations don't deadlock or corrupt state under actor reentrancy. A real
-// race here is caught by Thread Sanitizer (`swift test --sanitize=thread`),
-// not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test func arrayActorConcurrentReadsDuringWritesDoNotRace() async throws {
     let array = ThreadSafeArray<Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -314,9 +307,7 @@ private struct ArrayActorRemoveAllBoom: Error {}
     #expect(await array.elements == [1, 2, 3, 6])
 }
 
-// Each task reads the current count then appends it (check-then-act). If `mutate`
-// didn't hold the actor for the whole closure, two tasks could read the same count
-// and append duplicate values, leaving gaps/dupes instead of a clean permutation of 0..<N.
+// Check-then-act inside `mutate` must yield a clean permutation of 0..<N.
 @Test func arrayActorMutateIsAtomicAcrossCompoundOperations() async throws {
     let array = ThreadSafeArray<Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -337,8 +328,7 @@ private struct ArrayActorRemoveAllBoom: Error {}
     #expect(await array.elements == [3, 2, 1])
 }
 
-// Mirrors `threadSafeArrayConcurrentSwapAtNeverLosesElements`: an even total number of swaps
-// must restore the start order, with no element lost or duplicated.
+// An even number of swaps must restore the original order.
 @Test func arrayActorConcurrentSwapAtNeverLosesElements() async throws {
     let array = ThreadSafeArray([0, 1])
     await withTaskGroup(of: Void.self) { group in

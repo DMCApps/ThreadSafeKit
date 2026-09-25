@@ -2,9 +2,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Performance coverage for `ThreadSafeAtomic`: every callable public member stays within a
-// generous absolute-time ceiling for an actor hop (see `assertFast`'s async overload in
-// TestSupport.swift). `set(_:)` is `@available(*, unavailable)` and so isn't callable here.
+// Absolute-time ceilings for every callable `ThreadSafeAtomic` member.
 
 @Test(.tags(.performance))
 func atomicActorGetIsFast() async {

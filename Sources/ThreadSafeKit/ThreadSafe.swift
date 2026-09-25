@@ -3,40 +3,10 @@ import os
 import Darwin
 #endif
 
-/// Lock-backed thread-safe wrapper around any `Sendable` value. Pick the backing mechanism via
-/// ``ThreadSafeMechanism``; defaults to `.lock` (every access exclusive). `.readerWriterLock`
-/// (concurrent reads, exclusive writes) is faster when many threads read a large collection at
-/// once — see ``ThreadSafeMechanism`` for when to pick it and the measured costs.
-///
-/// Shape-specific subscripts (`ts[i]`, `dict[k]`) are atomic for the *entire* access under every
-/// mechanism, including compound forms like `ts[i] += 1` and `dict[k]?.append(x)` — the write lock
-/// is held across the whole get-modify-set via a `_modify` accessor, not just a plain `set`.
-///
-/// Shape-specific members (`append`/`popLast` for collections, `updateValue`/`removeValue` for
-/// dictionaries, etc.) are added via constrained extensions in the `ThreadSafe+*.swift` files.
-///
-/// Also usable as a property wrapper: `wrappedValue` is a plain-value snapshot (read-only — direct
-/// assignment isn't atomic across read-modify-write), and `projectedValue` is this instance itself, so
-/// `$name` gives `mutate`/shape-specific members/etc.
+/// Lock-backed thread-safe wrapper around any `Sendable` value, usable as a property wrapper whose `$name` exposes `mutate`.
 @propertyWrapper
 public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
-    // Every public member (plus `read`/`write`/`beginModify`/`endModify`) is `@inlinable` so a
-    // client module can specialize it for its concrete `Value`; unspecialized, each call paid
-    // ~40–200ns of generic dispatch on top of the lock (see `ThreadSafeKitBenchmarks`). Everything
-    // they touch is `@usableFromInline` for that reason — don't make it `private`, and mark new
-    // public members `@inlinable` too.
-    //
-    // The four actor types (`ThreadSafeArray`, `ThreadSafeDictionary`, `ThreadSafeSet`,
-    // `ThreadSafeAtomic`) follow the same rule and are `public final actor`s for the same reason,
-    // plus one more that's specific to actors: Swift doesn't treat actors as implicitly `final`, so
-    // a call through a captured instance (e.g. inside a `@Sendable` closure passed to a `Task`,
-    // which is how the contended benchmarks and most real callers use them) compiles to a vtable
-    // call into the unspecialized generic method — `@inlinable` alone can't fix that, since the
-    // compiler can't devirtualize and inline a call it can't statically resolve. `final` makes the
-    // call resolvable again. Their shared members (`mutate` plus the read-only `Collection` members)
-    // live once in `_ThreadSafeActorStorage`'s protocol extension (`ThreadSafeActorStorage.swift`) —
-    // see its doc comment for the details, and add any new shared member there. Don't remove `final`
-    // from any of the four actors, and don't make their storage `private` again.
+    // Members are `@inlinable` (and actors `final`) so clients can specialize and devirtualize calls; don't remove either.
     @usableFromInline
     enum Backing {
         case lock(OSAllocatedUnfairLock<Void>)
@@ -45,30 +15,11 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
 
     @usableFromInline
     let backing: Backing
-    // State lives on the instance (not as `OSAllocatedUnfairLock`'s own state) so a subscript
-    // `_modify` can `yield &storage[index]` directly — the lock's state is only reachable inside
-    // the closure passed to `withLock`, which can't span a `yield`. `read`/`write`/`beginModify`
-    // guard every access to it.
-    //
-    // Deliberately `storage`, not the actors' `_storage`: theirs is public only because
-    // `_ThreadSafeActorStorage` requires it, and is safe because actor isolation guards it. This one
-    // is internal (`@usableFromInline`) and guarded only by the lock, so it must never be public —
-    // outside access would bypass `read`/`write` entirely.
+    // Stored outside the lock so `_modify` can yield `&storage` directly; internal because only the lock guards it.
     @usableFromInline
     var storage: Value
 
-    // Set right after `beginModify()` acquires its lock/rwlock; checked (and
-    // cleared) by `endModify()` before releasing it. `write`/`mutate` can never hit this — their
-    // closure parameter type is synchronous, so a caller can't `await` inside it — but a
-    // subscript's `_modify` `yield` is exposed to arbitrary caller code, including as `inout` to
-    // an `async` function. If that function suspends and the task resumes on a different thread,
-    // unlocking from a thread other than the one that locked is undefined behavior for both
-    // `os_unfair_lock` and `pthread_rwlock` — this traps deterministically instead of risking UB.
-    // If the task instead resumes on the *same* thread (always true on `@MainActor`, and possible
-    // elsewhere), this check can't see it: `pthread_equal` matches, so nothing trips. The write lock
-    // just stays held for the whole `await`, blocking every other thread's access to this instance
-    // and tripping `ReentrancyTracker`/`os_unfair_lock`'s own reentry trap for any other task that
-    // touches this instance from that same thread in the meantime.
+    // Traps if a `_modify` yield resumes on another thread, since cross-thread unlock is undefined behavior.
     @usableFromInline
     var modifyOwnerThread: pthread_t?
 
@@ -88,16 +39,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         self.init(wrappedValue: value, mechanism: mechanism)
     }
 
-    // `.lock` deliberately skips `ReentrancyTracker` entirely: `os_unfair_lock` already traps on a
-    // same-thread relock (read-in-read, read-in-write, write-in-read, write-in-write,
-    // modify-in-modify — every combination, since every access takes the same lock), so tracking
-    // would be pure overhead that duplicates what the lock already guarantees. The trade-off is
-    // that `.lock` reentry crashes with the OS's own message ("BUG IN CLIENT OF LIBPLATFORM: Trying
-    // to recursively lock an os_unfair_lock", in the crash report) instead of `trapReentrant()`'s
-    // message below — still a deterministic process-terminating trap, just not this codebase's
-    // wording. `.readerWriterLock` needs the tracker: on Darwin, `pthread_rwlock` write-in-read
-    // hangs outright, and read-in-read succeeds but deadlocks once a writer queues, so without
-    // tracking those cases would hang instead of trapping.
+    // `.lock` skips `ReentrancyTracker` since `os_unfair_lock` already traps on relock, whereas `pthread_rwlock` would hang.
     @inlinable
     func read<T: Sendable>(_ body: @Sendable (Value) throws -> T) rethrows -> T {
         switch backing {
@@ -130,10 +72,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
-    /// Begins a write-exclusive critical section that a subscript `_modify` accessor holds across
-    /// its `yield`. `_modify` can't call `write(_:)`: holding a lock across a coroutine suspension
-    /// isn't expressible through a closure-based API, so the lock/rwlock has to be entered
-    /// and exited as two separate calls instead. Must be paired with `endModify()`.
+    /// Takes the write lock for a subscript `_modify` to hold across its `yield`; pair with `endModify()`.
     @inlinable
     func beginModify() {
         switch backing {
@@ -170,8 +109,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         }
     }
 
-    /// Only reachable for `.readerWriterLock` — `.lock` never calls `ReentrancyTracker`, so its
-    /// reentry crashes natively via `os_unfair_lock` instead (see the comment above `read(_:)`).
+    /// Only reached under `.readerWriterLock`; `.lock` reentry crashes inside `os_unfair_lock`.
     @usableFromInline
     static func trapReentrant() -> Never {
         fatalError("""
@@ -183,10 +121,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
         """)
     }
 
-    // If `Value` is a reference type, this (and `elements`/`dictionary`/other shape-specific
-    // snapshot accessors) return the same instance, not a copy — mutating through it bypasses
-    // the lock entirely. Only value-type `Value`s (Array/Dictionary/Set/String/scalars)
-    // get real safety from these accessors.
+    // Snapshots are copies only for value types; reference types return the shared instance.
     @inlinable
     public var wrappedValue: Value {
         get { read { $0 } }
@@ -197,22 +132,7 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     @inlinable
     public var projectedValue: ThreadSafe<Value> { self }
 
-    /// Runs `body` as a single unit of work under the lock, so compound
-    /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
-    ///
-    /// Don't call back into this same instance (`mutate`, `read`-backed members like `count`/`elements`,
-    /// a subscript, or any other shape member) from within `body` — the lock is already
-    /// held, and re-entry traps deterministically under either mechanism instead of hanging:
-    /// natively via `os_unfair_lock` for `.lock`, via `ReentrancyTracker` for `.readerWriterLock`.
-    ///
-    /// Nesting a *different* instance's access inside `body` is fine on its own (`a.mutate { b.mutate { ... } }`
-    /// works — reentrancy detection is per-instance) but two instances nested in opposite order on two
-    /// threads deadlock, with no trap: thread 1 running `a.mutate { b.mutate { ... } }` while thread 2 runs
-    /// `b.mutate { a.mutate { ... } }` can leave each thread holding one lock and waiting on the other,
-    /// forever. This can't be caught at compile time or cheaply at runtime, so avoid nesting accesses to
-    /// different instances; if you must, always nest in the same global order, or better, snapshot one
-    /// first (`let bValue = b.wrappedValue`) and `mutate` the other on its own. Actor types' `mutate`
-    /// can't deadlock this way — its closure is synchronous, so it can't `await` into another actor.
+    /// Runs `body` atomically under the lock; reentering this instance traps, and opposite-order nesting of two instances can deadlock.
     @inlinable
     public func mutate<T: Sendable>(_ body: @Sendable (inout Value) throws -> T) rethrows -> T {
         try write(body)

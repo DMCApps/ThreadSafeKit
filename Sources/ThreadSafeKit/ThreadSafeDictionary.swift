@@ -1,6 +1,4 @@
-/// `mutate` and the read-only `Collection` members (`Storage.Element == (key: Key, value: Value)`)
-/// come from `_ThreadSafeActorStorage`'s protocol extension — see that type's doc comment for the
-/// `final`/`@inlinable`/`_storage` rationale shared by all four actor types.
+/// Actor-backed dictionary; shared members come from `_ThreadSafeActorStorage`.
 public final actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendable>: _ThreadSafeActorStorage {
     public var _storage: [Key: Value]
 
@@ -56,7 +54,7 @@ public final actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
         try _storage.merge(other, uniquingKeysWith: combine)
     }
 
-    /// The sequence-of-pairs overload, alongside the whole-dictionary one above.
+    /// Sequence-of-pairs overload.
     @inlinable
     public func merge(
         _ other: some Sequence<(Key, Value)> & Sendable,
@@ -85,9 +83,7 @@ public final actor ThreadSafeDictionary<Key: Hashable & Sendable, Value: Sendabl
         _storage[key]
     }
 
-    /// `d[k, default: 0] += 1` isn't expressible here — an actor's subscript can't be assigned or
-    /// modified from outside the actor, so this is get-only, mirroring `subscript(key:)` above.
-    /// For an atomic default-and-update, use `mutate`: `await dict.mutate { $0[k, default: 0] += 1 }`.
+    /// Get-only since actor subscripts can't be mutated externally; use `mutate` for default-and-update.
     @inlinable
     public subscript(key: Key, default defaultValue: @autoclosure @Sendable () -> Value) -> Value {
         _storage[key, default: defaultValue()]

@@ -1,11 +1,4 @@
-/// Structural stand-in for `Dictionary` so the keyed-storage extension below can be written generically.
-/// Public only because it must appear in public extension signatures — not intended for outside conformance.
-///
-/// It exists because computed properties can't be generic: `keys`/`values`/`dictionary` need a
-/// `where Value == [K: V]` constraint to express their return types, but a plain constraint like
-/// that can't be attached to a protocol extension over an arbitrary keyed-storage shape. Requiring
-/// only members `Dictionary` already has — with associated types standing in for `Keys`/`Values` —
-/// means the `Dictionary` conformance below adds nothing beyond the required `KeyedValue` typealias.
+/// Structural stand-in for `Dictionary` so keyed members can be generic; public only because public signatures use it.
 public protocol _ThreadSafeKeyedStorage {
     associatedtype Key: Hashable
     associatedtype KeyedValue
@@ -67,10 +60,7 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
         try write { try $0.merge(other, uniquingKeysWith: combine) }
     }
 
-    /// Atomic for the whole access, including `dict[k]! += 1`, `dict[k]?.append(x)`, and plain
-    /// `dict[k] = v`/`dict[k] = nil` (the latter removes the key) — the write lock is held across
-    /// the entire get-modify-set. `dict[k] = dict[k]! + 1` is two separate accesses and is NOT
-    /// atomic; use `+=` or `mutate` for that.
+    /// Atomic across the whole get-modify-set, so `dict[k]! += 1` is safe but `dict[k] = dict[k]! + 1` is not.
     @inlinable
     public subscript(key: Value.Key) -> Value.KeyedValue? {
         get { read { $0[key] } }
@@ -82,11 +72,7 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
     }
 }
 
-// `mapValues`/`compactMapValues`/`filter`/`reserveCapacity`/`popFirst`/the default subscript/the
-// sequence-of-pairs `merge` overload change the value type, return a plain dictionary/tuple, or
-// only exist on the concrete type, rather than generalizing to arbitrary keyed storage — kept off
-// `_ThreadSafeKeyedStorage` (per its doc comment) and constrained directly to the concrete `Dictionary`
-// shape instead.
+// These don't generalize to `_ThreadSafeKeyedStorage`, so they're constrained to concrete `Dictionary`.
 extension ThreadSafe {
     @inlinable
     public func mapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
@@ -122,10 +108,7 @@ extension ThreadSafe {
         write { $0.popFirst() }
     }
 
-    /// The stdlib's sequence-of-pairs `merge` overload, alongside the whole-dictionary one above.
-    /// `some Sequence<(Key, KeyedValue)>` (an unlabeled-tuple `Element`) never matches a `Dictionary`
-    /// argument (whose `Element` is the labeled tuple `(key:, value:)`), so this can never collide
-    /// with a call passing another dictionary — that always resolves to the overload above instead.
+    /// Sequence-of-pairs overload; never ambiguous with the `Dictionary` one since the element tuple labels differ.
     @inlinable
     public func merge<Key: Hashable & Sendable, KeyedValue: Sendable>(
         _ other: some Sequence<(Key, KeyedValue)> & Sendable,
@@ -134,10 +117,7 @@ extension ThreadSafe {
         try write { try $0.merge(other, uniquingKeysWith: combine) }
     }
 
-    /// `d[k, default: 0] += 1` is atomic for the whole access — the write lock is held across the
-    /// entire get-modify-set via `_modify`, same as `subscript(key:)` above. `d[k, default: 0] =
-    /// d[k, default: 0] + 1` is NOT atomic: that's two separate accesses (a `get`, then a
-    /// `_modify`), so another writer can slip in between them.
+    /// Atomic across the whole get-modify-set, so `d[k, default: 0] += 1` is safe.
     @inlinable
     public subscript<Key: Hashable & Sendable, KeyedValue: Sendable>(
         key: Key, default defaultValue: @autoclosure () -> KeyedValue

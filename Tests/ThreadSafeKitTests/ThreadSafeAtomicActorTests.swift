@@ -24,9 +24,7 @@ import Testing
     #expect(await counter.get() == 6)
 }
 
-// Real use case: 1_000 concurrent tasks each atomically take the next ID via
-// `mutate { defer { $0 += 1 }; return $0 }`. The collected IDs must be exactly 0..<1000:
-// no duplicates (a stale read-then-write would repeat an ID), no gaps.
+// Concurrent ID allocation via `mutate` must yield exactly 0..<1000.
 @Test func atomicActorConcurrentMutateReturningValueHandsOutUniqueSequentialIDs() async throws {
     let idGenerator = ThreadSafeAtomic(0)
     let ids = await withTaskGroup(of: Int.self, returning: [Int].self) { group in
@@ -46,8 +44,7 @@ import Testing
 
 private struct AtomicMutateBoom: Error {}
 
-// Mirrors `mutateReleasesLockWhenBodyThrows` (ThreadSafeHardeningTests.swift): the error
-// propagates, and the mutation performed before the throw is kept — `mutate` isn't transactional.
+// The error propagates and the pre-throw mutation is kept; `mutate` isn't transactional.
 @Test func atomicActorMutateThrowsPropagatesErrorAndKeepsPartialMutation() async throws {
     let counter = ThreadSafeAtomic(0)
     await #expect(throws: AtomicMutateBoom.self) {

@@ -3,10 +3,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Performance coverage for the core `ThreadSafe<Value>` wrapper (both `.lock` and
-// `.readerWriterLock` mechanisms): every representative read/write member stays within a
-// generous absolute-time ceiling, plus regression tests for the specific O(n)-per-write
-// defect this file was created to guard against.
+// Absolute-time ceilings for `ThreadSafe` members, plus O(n)-per-write regression tests.
 
 private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
@@ -38,10 +35,7 @@ func arrayShapeWritesAreFast(mechanism: ThreadSafeMechanism) {
     assertFast("removeFirst") { array.append(0); _ = array.removeFirst() }
     assertFast("removeLast") { array.append(0); _ = array.removeLast() }
     assertFast("reserveCapacity") { array.reserveCapacity(10) }
-    // reverse/sort/shuffle go through generic MutableCollection & RandomAccessCollection dispatch
-    // (vs. append/pop's directly-specialized calls) and shuffle additionally draws from the system
-    // RNG, so all three carry real per-call overhead beyond the 50us ceiling tuned for simple ops —
-    // ceilings widened further to also clear `--sanitize=thread`'s per-call instrumentation cost.
+    // Wider ceilings: generic dispatch, RNG, and TSan overhead.
     assertFast("reverse", maxMicroseconds: 1_500) { array.reverse() }
     assertFast("sort", maxMicroseconds: 3_000) { array.sort() }
     assertFast("sort(by:)", maxMicroseconds: 3_000) { array.sort(by: <) }
@@ -136,13 +130,7 @@ func atomicShapeReadsAndWritesAreFast(mechanism: ThreadSafeMechanism) {
 
 // MARK: - Regression: per-write cost must not scale with collection size
 
-// `write` used to keep `storage` (a second reference to the CoW buffer) alive across the whole
-// mutation, so every single write defeated copy-on-write and copied the entire collection — an
-// O(n) write, i.e. O(n^2) to build an n-element collection. This was fixed by making `value`
-// uniquely referenced during the call. These tests guard the fix by asserting per-write cost at a
-// large preload isn't dramatically worse than at a small one — a regression back to the
-// O(n) shape blows past `maxSlowdown` by ~100x; the fix stays under ~5x in practice.
-// Bounded by ratio (not absolute time) to stay meaningful across machines/CI load.
+// Guards against writes defeating copy-on-write by comparing per-write cost at large vs. small preloads.
 
 private let smallPreload = 1_000
 private let largePreload = 200_000

@@ -2,9 +2,7 @@
 import Darwin
 #endif
 
-/// Thin wrapper around `pthread_rwlock_t`: concurrent reads, exclusive writes. Locked and unlocked
-/// manually, so a write lock can be held across a subscript `_modify`'s `yield` (you can't `yield`
-/// from inside a closure).
+/// Manually locked `pthread_rwlock_t`, so a write lock can be held across a `_modify` `yield`.
 @usableFromInline
 final class ReaderWriterLock: @unchecked Sendable {
     private let lock: UnsafeMutablePointer<pthread_rwlock_t>

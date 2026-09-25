@@ -4,22 +4,7 @@ import Testing
 let concurrencyIterations = 2000
 
 extension Tag {
-    /// Applied to every timing-based test (fixed absolute-time or relative-overhead ceilings) —
-    /// see ThreadSafePerformanceTests.swift, ThreadSafeOverheadTests.swift, and the four
-    /// `*ActorPerformanceTests.swift` files. Lets those be run/excluded as a group.
-    ///
-    /// This toolchain's `swift test --filter`/`--skip` only support regular expressions over test
-    /// names (confirmed against `swift test --help`, which documents no `tag:` syntax, and
-    /// empirically), not Swift Testing tags — so the tag alone doesn't give a CLI selector. It's
-    /// kept anyway as the source of truth for "is this a performance test" (an IDE/Xcode test
-    /// plan, or a future SwiftPM version, could filter by it directly); the README's `## Testing`
-    /// commands instead rely on the fact that every performance/overhead test name ends in `Fast`,
-    /// `Bounded`, or `CostDoesNotScaleWithCollectionSize`, none of which appear in any correctness
-    /// test name (verified with `grep -rn "@Test" Tests/ | grep -E "Fast|Bounded"`).
-    ///
-    /// RULE: every `.performance` test's name MUST end in `Fast`, `Bounded`, or
-    /// `CostDoesNotScaleWithCollectionSize`, and no correctness test's name may contain those —
-    /// otherwise the README's `--skip`/`--filter` commands silently misclassify it.
+    /// Tag for timing tests, whose names must end in `Fast`, `Bounded`, or `CostDoesNotScaleWithCollectionSize` for the README's `--skip`/`--filter` regexes.
     @Tag static var performance: Self
 }
 
@@ -37,9 +22,7 @@ func averageNanoseconds(over count: Int, _ body: () async -> Void) async -> Doub
     return Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / Double(count)
 }
 
-/// Minimum average nanoseconds per call across `batches` batches of `count` calls. The minimum
-/// filters out batches inflated by preemption or parallel-test load, so it's far more stable
-/// than a single average.
+/// Minimum average ns per call across batches, filtering out preemption-inflated batches.
 func minBatchNanoseconds(batches: Int = 7, over count: Int, _ body: () -> Void) -> Double {
     (0..<batches).map { _ in averageNanoseconds(over: count, body) }.min()!
 }
@@ -51,14 +34,7 @@ func minBatchNanoseconds(batches: Int = 7, over count: Int, _ body: () async -> 
     return best
 }
 
-/// Asserts `body`, called `sampleSize` times, averages under `maxMicroseconds` per call.
-///
-/// Deliberately loose: a catastrophic-regression guard (hang, lock convoy, accidental O(n) work
-/// per call), not a speed measurement. Real calls cost tens of nanoseconds, but `swift test`
-/// builds debug, runs tests in parallel, and may run under TSan, so a tight absolute ceiling here
-/// would be flaky. `assertOverheadBounded` is the tighter, machine-independent check; the
-/// `ThreadSafeKitBenchmarks` executable (`swift run -c release ThreadSafeKitBenchmarks`) is where
-/// real per-operation numbers come from.
+/// Loose catastrophic-regression guard asserting `body` averages under `maxMicroseconds` per call.
 func assertFast(
     _ label: String,
     sampleSize: Int = 2_000,
@@ -74,8 +50,7 @@ func assertFast(
     )
 }
 
-/// Asserts `body`, awaited `sampleSize` times, averages under `maxMicroseconds` per call.
-/// Same catastrophic-regression-only intent as the synchronous overload above.
+/// Async counterpart of the synchronous `assertFast`.
 func assertFast(
     _ label: String,
     sampleSize: Int = 500,
@@ -91,15 +66,7 @@ func assertFast(
     )
 }
 
-/// Asserts `wrapped` costs no more than `maxOverhead`x the per-call cost of `raw`. Bounded by
-/// ratio, not absolute time, so it stays meaningful across machines/CI load — same rationale as
-/// the collection-size regression tests in ThreadSafePerformanceTests.swift.
-///
-/// Each side is the *minimum* per-call average over several batches (`minBatchNanoseconds`),
-/// not a single average: single averages swung ~30x run-to-run under parallel test load, while
-/// batch minimums stay within a few x. Measured wrapped/raw ratios (debug and TSan) peaked around
-/// 10-11x, so `maxOverhead` = 25 leaves >2x headroom. `minFloorNanoseconds` only matters when
-/// `raw` is so cheap that `raw * maxOverhead` would sit inside measurement noise.
+/// Asserts `wrapped` costs at most `maxOverhead`× `raw`, using batch minimums to resist parallel-test noise.
 func assertOverheadBounded(
     _ label: String,
     sampleSize: Int = 5_000,
@@ -119,9 +86,7 @@ func assertOverheadBounded(
     )
 }
 
-/// Async counterpart for the actor types. Uncontended actor calls measured only ~1-2x raw, but
-/// actor scheduling is more sensitive to parallel-test contention than a lock, so the defaults
-/// are looser than the synchronous overload's.
+/// Async counterpart with looser defaults, since actor scheduling is more sensitive to test contention.
 func assertOverheadBounded(
     _ label: String,
     sampleSize: Int = 1_000,

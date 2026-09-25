@@ -100,9 +100,7 @@ extension ThreadSafe where Value: Collection, Value.Element: Sendable, Value.Ind
     }
 }
 
-// `first`/`last` live here (BidirectionalCollection), not on the general Collection extension above,
-// so a dictionary shape — Collection but not BidirectionalCollection — doesn't advertise a
-// nondeterministic `first`.
+// On `BidirectionalCollection` only, so dictionaries don't expose a nondeterministic `first`.
 extension ThreadSafe where Value: BidirectionalCollection, Value.Element: Sendable {
     @inlinable
     public var first: Value.Element? { read { $0.first } }
