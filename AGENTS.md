@@ -31,16 +31,17 @@ Report the test counts. Don't call a task done until all of these pass.
 
 ## Design rules
 
+Before proposing a design change (mechanism, conformance, API shape), check `docs/DECISIONS.md` for approaches already tried and rejected.
+
 - Thread safety is the top priority. Every public call is one atomic access. Subscripts use `get` + `_modify` so `ts[i] += 1` and `dict[k]?.append(x)` are atomic. Never split a read-modify-write across two lock acquisitions.
 - Where misuse can be caught at compile time, catch it there (e.g. an `@available(*, unavailable)` setter on `wrappedValue`) rather than only documenting it.
 - Same-thread reentry into an instance must trap deterministically and never hang, under both mechanisms. Cover each new closure-taking member with an exit test.
-- No `DispatchQueue` mechanism: it can't hold a lock across `_modify`'s `yield` cheaply (README "Why not `DispatchQueue`?").
-- Only mirror the stdlib API: the same names and shapes as `Array`/`Dictionary`/`Set`/`SetAlgebra`/collection protocols. No invented helpers or combinators (e.g. no `push`/`pop`); leave anything uncovered to `mutate`.
+- Only mirror the stdlib API: the same names and shapes as `Array`/`Dictionary`/`Set`/`SetAlgebra`/collection protocols. Leave anything uncovered to `mutate`.
 - Keep the sync wrappers and the actors in lockstep: a member added to one shape goes on its actor counterpart with the same name and semantics.
 - A new member that needs a broader constraint gets a new `extension ThreadSafe where …` block. Don't loosen an existing block. Check for overload ambiguity, since `Set` is both `Collection` and `SetAlgebra` and `Array` is both `RangeReplaceableCollection` and `MutableCollection`.
 - Any generic type captured by a closure or stored needs `Sendable`, including `Value.Index` where an index is captured.
 - Public members are `@inlinable` and actors are `final`; `SourceConventionTests` enforces both. Whatever an `@inlinable` member touches must be `@usableFromInline`, not `private`.
-- Conformances: `Equatable` and `CustomStringConvertible` only. Not `Hashable`: in-place mutation would change the hash of an instance already in a `Set`. Not `Codable`: callers decode the raw value and wrap it (README "Codable").
+- Conformances: `Equatable` and `CustomStringConvertible` only; `conformancesAreDeliberate` enforces this.
 - No speculative abstractions. Add a protocol, wrapper or generic only when there's a concrete second user today.
 
 ## Tests

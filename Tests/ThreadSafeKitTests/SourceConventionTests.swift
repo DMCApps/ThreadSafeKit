@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ThreadSafeKit
 
 /// Swift files under `Sources/ThreadSafeKit`, keyed by path relative to the repo root.
 private func librarySources() throws -> [(path: String, lines: [String])] {
@@ -50,4 +51,17 @@ private func librarySources() throws -> [(path: String, lines: [String])] {
         }
     }
     #expect(nonFinal.isEmpty, "Public actors must be `final` (see README Contributing):\n\(nonFinal.joined(separator: "\n"))")
+}
+
+@Test func conformancesAreDeliberate() {
+    // Checked through `Any.Type` so the compiler can't fold the casts; see docs/DECISIONS.md for why each is absent.
+    let types: [Any.Type] = [
+        ThreadSafe<Int>.self, ThreadSafe<[Int]>.self, ThreadSafe<[String: Int]>.self, ThreadSafe<Set<Int>>.self,
+        ThreadSafeAtomic<Int>.self, ThreadSafeArray<Int>.self, ThreadSafeDictionary<String, Int>.self, ThreadSafeSet<Int>.self,
+    ]
+    for type in types {
+        #expect(!(type is any Hashable.Type), "\(type) must not be Hashable")
+        #expect(!(type is any Encodable.Type), "\(type) must not be Encodable")
+        #expect(!(type is any Decodable.Type), "\(type) must not be Decodable")
+    }
 }
