@@ -4,120 +4,103 @@
 /// for the dictionary shape (`await array.mutate { $0[i] = v }` also works, but touches the whole
 /// array under one call rather than just this index).
 ///
-/// `final`: Swift doesn't treat actors as implicitly `final`, and calling a non-final actor's method
-/// through a captured instance (e.g. inside a `@Sendable` closure passed to a `Task`) compiles to a
-/// vtable call, which the compiler can't specialize/inline even when the callee is `@inlinable`. This
-/// type is `final` specifically so that call can be devirtualized and inlined into the caller — don't
-/// remove it. Every public member is `@inlinable` for the same reason `ThreadSafe`'s are (see the
-/// comment at the top of `ThreadSafe.swift`): so a client module can specialize the call for its
-/// concrete `Element` instead of paying for unspecialized generic dispatch. `storage` is
-/// `@usableFromInline` so those inlinable bodies can reach it — don't make it `private` again. Mark
-/// any new public member `@inlinable` too.
-public final actor ThreadSafeArray<Element: Sendable> {
-    @usableFromInline
-    var storage: [Element]
+/// `mutate` and the read-only `Collection` members come from `_ThreadSafeActorStorage`'s protocol
+/// extension — see that type's doc comment for the `final`/`@inlinable`/`_storage` rationale shared
+/// by all four actor types.
+public final actor ThreadSafeArray<Element: Sendable>: _ThreadSafeActorStorage {
+    public var _storage: [Element]
 
     @inlinable
     public init() {
-        storage = []
+        _storage = []
     }
 
     @inlinable
     public init(_ elements: some Sequence<Element>) {
-        storage = Array(elements)
-    }
-
-    @inlinable
-    public var count: Int {
-        storage.count
-    }
-
-    @inlinable
-    public var isEmpty: Bool {
-        storage.isEmpty
+        _storage = Array(elements)
     }
 
     @inlinable
     public var first: Element? {
-        storage.first
+        _storage.first
     }
 
     @inlinable
     public var last: Element? {
-        storage.last
+        _storage.last
     }
 
     @inlinable
     public var elements: [Element] {
-        storage
+        _storage
     }
 
     @inlinable
     public func append(_ newElement: Element) {
-        storage.append(newElement)
+        _storage.append(newElement)
     }
 
     @inlinable
     public func append(contentsOf newElements: some Sequence<Element> & Sendable) {
-        storage.append(contentsOf: newElements)
+        _storage.append(contentsOf: newElements)
     }
 
     @inlinable
     public func popLast() -> Element? {
-        storage.popLast()
+        _storage.popLast()
     }
 
     @discardableResult
     @inlinable
     public func remove(at index: Int) -> Element {
-        storage.remove(at: index)
+        _storage.remove(at: index)
     }
 
     @inlinable
     public func insert(_ newElement: Element, at index: Int) {
-        storage.insert(newElement, at: index)
+        _storage.insert(newElement, at: index)
     }
 
     @inlinable
     public func insert(contentsOf newElements: some Collection<Element> & Sendable, at index: Int) {
-        storage.insert(contentsOf: newElements, at: index)
+        _storage.insert(contentsOf: newElements, at: index)
     }
 
     @inlinable
     public func removeAll(keepingCapacity keepCapacity: Bool = false) {
-        storage.removeAll(keepingCapacity: keepCapacity)
+        _storage.removeAll(keepingCapacity: keepCapacity)
     }
 
     @inlinable
     public func removeAll(where shouldBeRemoved: @Sendable (Element) throws -> Bool) rethrows {
-        try storage.removeAll(where: shouldBeRemoved)
+        try _storage.removeAll(where: shouldBeRemoved)
     }
 
     @discardableResult
     @inlinable
     public func removeFirst() -> Element {
-        storage.removeFirst()
+        _storage.removeFirst()
     }
 
     @inlinable
     public func removeFirst(_ n: Int) {
-        storage.removeFirst(n)
+        _storage.removeFirst(n)
     }
 
     @discardableResult
     @inlinable
     public func removeLast() -> Element {
-        storage.removeLast()
+        _storage.removeLast()
     }
 
     @inlinable
     public func removeLast(_ n: Int) {
-        storage.removeLast(n)
+        _storage.removeLast(n)
     }
 
     @inlinable
     public func removeSubrange(_ bounds: Range<Int>) {
-        storage.removeSubrange(bounds)
+        _storage.removeSubrange(bounds)
     }
 
     @inlinable
@@ -125,128 +108,57 @@ public final actor ThreadSafeArray<Element: Sendable> {
         _ subrange: Range<Int>,
         with newElements: C
     ) where C.Element == Element {
-        storage.replaceSubrange(subrange, with: newElements)
+        _storage.replaceSubrange(subrange, with: newElements)
     }
 
     @inlinable
     public func reserveCapacity(_ n: Int) {
-        storage.reserveCapacity(n)
+        _storage.reserveCapacity(n)
     }
 
     @inlinable
     public func swapAt(_ i: Int, _ j: Int) {
-        storage.swapAt(i, j)
+        _storage.swapAt(i, j)
     }
 
     @inlinable
     public func reverse() {
-        storage.reverse()
+        _storage.reverse()
     }
 
     @inlinable
     public func shuffle() {
-        storage.shuffle()
+        _storage.shuffle()
     }
 
     @inlinable
     public func sort(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows {
-        try storage.sort(by: areInIncreasingOrder)
+        try _storage.sort(by: areInIncreasingOrder)
     }
 
     @inlinable
     public func firstIndex(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Int? {
-        try storage.firstIndex(where: predicate)
-    }
-
-    @inlinable
-    public func first(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Element? {
-        try storage.first(where: predicate)
-    }
-
-    @inlinable
-    public func contains(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Bool {
-        try storage.contains(where: predicate)
-    }
-
-    @inlinable
-    public func count(where predicate: @Sendable (Element) throws -> Bool) rethrows -> Int {
-        try storage.count(where: predicate)
-    }
-
-    @inlinable
-    public func min(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows -> Element? {
-        try storage.min(by: areInIncreasingOrder)
-    }
-
-    @inlinable
-    public func max(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows -> Element? {
-        try storage.max(by: areInIncreasingOrder)
-    }
-
-    @inlinable
-    public func randomElement() -> Element? {
-        storage.randomElement()
+        try _storage.firstIndex(where: predicate)
     }
 
     @inlinable
     public func filter(_ isIncluded: @Sendable (Element) throws -> Bool) rethrows -> [Element] {
-        try storage.filter(isIncluded)
-    }
-
-    @inlinable
-    public func compactMap<T: Sendable>(_ transform: @Sendable (Element) throws -> T?) rethrows -> [T] {
-        try storage.compactMap(transform)
-    }
-
-    @inlinable
-    public func sorted(by areInIncreasingOrder: @Sendable (Element, Element) throws -> Bool) rethrows -> [Element] {
-        try storage.sorted(by: areInIncreasingOrder)
-    }
-
-    @inlinable
-    public func allSatisfy(_ predicate: @Sendable (Element) throws -> Bool) rethrows -> Bool {
-        try storage.allSatisfy(predicate)
+        try _storage.filter(isIncluded)
     }
 
     @inlinable
     public func prefix(_ maxLength: Int) -> [Element] {
-        Array(storage.prefix(maxLength))
+        Array(_storage.prefix(maxLength))
     }
 
     @inlinable
     public func suffix(_ maxLength: Int) -> [Element] {
-        Array(storage.suffix(maxLength))
-    }
-
-    @inlinable
-    public func forEach(_ body: @Sendable (Element) throws -> Void) rethrows {
-        try storage.forEach(body)
-    }
-
-    @inlinable
-    public func map<T: Sendable>(_ transform: @Sendable (Element) throws -> T) rethrows -> [T] {
-        try storage.map(transform)
-    }
-
-    @inlinable
-    public func reduce<Result: Sendable>(
-        into initial: Result,
-        _ updateAccumulatingResult: @Sendable (inout Result, Element) throws -> Void
-    ) rethrows -> Result {
-        try storage.reduce(into: initial, updateAccumulatingResult)
-    }
-
-    @inlinable
-    public func reduce<Result: Sendable>(
-        _ initialResult: Result,
-        _ nextPartialResult: @Sendable (Result, Element) throws -> Result
-    ) rethrows -> Result {
-        try storage.reduce(initialResult, nextPartialResult)
+        Array(_storage.suffix(maxLength))
     }
 
     @inlinable
     public subscript(index: Int) -> Element {
-        storage[index]
+        _storage[index]
     }
 
     /// The actor-isolated equivalent of `ThreadSafeDictionary.updateValue(_:forKey:)`: an atomic,
@@ -254,52 +166,30 @@ public final actor ThreadSafeArray<Element: Sendable> {
     /// comment).
     @inlinable
     public func setElement(_ newValue: Element, at index: Int) {
-        storage[index] = newValue
+        _storage[index] = newValue
     }
 
     @inlinable
     public subscript(safe index: Int) -> Element? {
-        storage.indices.contains(index) ? storage[index] : nil
-    }
-
-    /// Runs `body` as a single unit of work isolated to this actor, so compound
-    /// operations (check-then-act, multi-step updates) are atomic — not just each individual call.
-    @inlinable
-    public func mutate<T>(_ body: (inout [Element]) throws -> T) rethrows -> T {
-        try body(&storage)
+        _storage.indices.contains(index) ? _storage[index] : nil
     }
 }
 
 extension ThreadSafeArray where Element: Equatable {
     @inlinable
     public func contains(_ element: Element) -> Bool {
-        storage.contains(element)
+        _storage.contains(element)
     }
 
     @inlinable
     public func firstIndex(of element: Element) -> Int? {
-        storage.firstIndex(of: element)
+        _storage.firstIndex(of: element)
     }
 }
 
 extension ThreadSafeArray where Element: Comparable {
     @inlinable
     public func sort() {
-        storage.sort()
-    }
-
-    @inlinable
-    public func sorted() -> [Element] {
-        storage.sorted()
-    }
-
-    @inlinable
-    public func min() -> Element? {
-        storage.min()
-    }
-
-    @inlinable
-    public func max() -> Element? {
-        storage.max()
+        _storage.sort()
     }
 }

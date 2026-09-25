@@ -33,8 +33,10 @@ public final class ThreadSafe<Value: Sendable>: @unchecked Sendable {
     // which is how the contended benchmarks and most real callers use them) compiles to a vtable
     // call into the unspecialized generic method — `@inlinable` alone can't fix that, since the
     // compiler can't devirtualize and inline a call it can't statically resolve. `final` makes the
-    // call resolvable again. See the doc comment at the top of each actor file for the details;
-    // don't remove `final` from any of them, and don't make their storage `private` again.
+    // call resolvable again. Their shared members (`mutate` plus the read-only `Collection` members)
+    // live once in `_ThreadSafeActorStorage`'s protocol extension (`ThreadSafeActorStorage.swift`) —
+    // see its doc comment for the details, and add any new shared member there. Don't remove `final`
+    // from any of the four actors, and don't make their storage `private` again.
     @usableFromInline
     enum Backing {
         case lock(OSAllocatedUnfairLock<Void>)
