@@ -3,11 +3,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Bounds this library's overhead relative to using the raw, unguarded stdlib type directly —
-// answers "how much does thread safety cost here" rather than assertFast's "is this call slow
-// in absolute terms." A wrapper can never be *faster* than the raw type it wraps (there's no
-// such thing as a free lock), so these tests assert the added cost stays a small, bounded
-// multiple of the raw operation instead.
+// Bounds wrapper cost as a multiple of the raw stdlib operation.
 
 private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
@@ -82,10 +78,7 @@ func atomicOverheadIsBounded(mechanism: ThreadSafeMechanism) {
 }
 
 // MARK: - Actor shapes
-//
-// Uncontended actor calls cost only ~1-2x the raw operation, but actor scheduling is more
-// sensitive to parallel-test contention than a lock, so `assertOverheadBounded`'s async overload
-// uses a somewhat looser multiplier/floor — see its doc comment.
+// Looser async bounds, since actor scheduling is more contention-sensitive.
 
 @Test(.tags(.performance))
 func arrayActorOverheadReadsAreBounded() async {

@@ -1,7 +1,4 @@
-/// Actor-backed single-value wrapper. Access requires `await`, matching ``ThreadSafeArray``/``ThreadSafeDictionary``.
-///
-/// `mutate` comes from `_ThreadSafeActorStorage`'s protocol extension — see that type's doc comment
-/// for the `final`/`@inlinable`/`_storage` rationale shared by all four actor types.
+/// Actor-backed single-value wrapper.
 public final actor ThreadSafeAtomic<Value: Sendable>: _ThreadSafeActorStorage {
     public var _storage: Value
 

@@ -3,13 +3,9 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Direct coverage for `ReaderWriterLock` itself (Sources/ThreadSafeKit/Utility/ReaderWriterLock.swift),
-// isolated from `ThreadSafe`'s own locking/parking/reentrancy logic. Shared mutable state below is a
-// bare, *unguarded* box mutated only under the lock under test — never a second `ThreadSafe`/other
-// lock around it, which would silently provide the real exclusion and mask a broken `ReaderWriterLock`.
+// Direct `ReaderWriterLock` coverage, using unguarded state so only the lock under test synchronizes.
 
-// `@unchecked`: every mutation below happens only while holding the `ReaderWriterLock` under
-// test, which is the actual thing providing the synchronization the compiler can't see.
+// `@unchecked`: mutated only while holding the lock under test.
 private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
@@ -29,14 +25,13 @@ func readLockAllowsConcurrentReaders() {
     }
 
     readerAHoldsLock.wait()
-    // Reader A still holds its read lock; a second, independent read lock must not block.
+    // Reader A still holds its lock; a second read lock must not block.
     lock.readLock()
     lock.unlock()
     releaseReaderA.signal()
 }
 
-// Deterministic exclusivity check (no timing/sleep): if `writeLock`/`unlock` didn't properly
-// exclude other writers, concurrent increments under the lock would lose updates.
+// Concurrent increments under the write lock must not lose updates.
 @Test(.timeLimit(.minutes(1)))
 func writeLockIsMutuallyExclusive() {
     let lock = ReaderWriterLock()
@@ -53,9 +48,7 @@ func writeLockIsMutuallyExclusive() {
     #expect(counter.value == workers * perWorker)
 }
 
-// A reader must never observe a torn write: `pair`'s two halves are always written together
-// under the write lock, so a reader that ever sees them mismatched proves the write lock failed
-// to exclude readers (or readers raced each other in a way that corrupted the read).
+// Mismatched halves would mean the write lock failed to exclude readers.
 @Test(.timeLimit(.minutes(1)))
 func writeLockExcludesReadersFromTornState() {
     let lock = ReaderWriterLock()

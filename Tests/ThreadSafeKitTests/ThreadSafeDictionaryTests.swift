@@ -58,9 +58,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(Set(dictionary.values) == [1, 2])
 }
 
-// `keys`/`values` return the same view types as a plain `Dictionary`'s own `keys`/`values`,
-// not `[Key]`/`[Value]` — this pins the static type so a regression back to an `Array` return
-// would fail to compile, not just fail an equality check.
+// Pins `keys`/`values` to Dictionary's view types, not arrays.
 @Test(arguments: mechanisms) func threadSafeDictionaryKeysAndValuesAreStandardViewTypes(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["a": 1, "b": 2], mechanism: mechanism)
     let keys: Dictionary<String, Int>.Keys = dictionary.keys
@@ -123,12 +121,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary.count == concurrencyIterations)
 }
 
-// `dict["k"]! += 1` holds the write lock across the whole get-modify-set (see the subscript's
-// doc comment in ThreadSafe+Dictionary.swift) — unlike the old get/set-accessor subscript,
-// concurrent compound assignment through it can't lose updates.
-//
-// 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
-// iteration per increment) — matching the array equivalent of this test.
+// `dict["k"]! += 1` holds the write lock across get-modify-set, so no increments are lost.
 @Test(arguments: mechanisms) func threadSafeDictionarySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe(["k": 0], mechanism: mechanism)
     let workers = 8
@@ -139,9 +132,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary["k"] == workers * perWorker)
 }
 
-// Same atomicity, but for the "keyed collection value" shape (`lists["k"]?.append(i)`) rather
-// than a keyed scalar — the subscript's `_modify` holds the lock across the whole optional-chained
-// mutation just as it does for `!` above.
+// Optional-chained mutation through `_modify` is atomic too.
 @Test(arguments: mechanisms) func threadSafeDictionaryOfArraysSubscriptOptionalAppendIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let lists = ThreadSafe(["k": [Int]()], mechanism: mechanism)
     let workers = 8
@@ -152,9 +143,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(lists["k"]?.count == workers * perWorker)
 }
 
-// `lists["missing"]?.append(x)` on a key that was never inserted must be a no-op — the yielded
-// value is `nil`, `Optional.append` never runs, and writing `nil` back through the subscript's
-// setter doesn't insert a "nil" entry (removing an absent key is itself a no-op for `Dictionary`).
+// Optional chaining on a missing key must not insert it.
 @Test(arguments: mechanisms) func threadSafeDictionaryOfArraysOptionalAppendOnMissingKeyIsNoOp(mechanism: ThreadSafeMechanism) throws {
     let lists = ThreadSafe<[String: [Int]]>(mechanism: mechanism)
     lists["missing"]?.append(1)
@@ -162,10 +151,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(lists["missing"] == nil)
 }
 
-// Interleaves reads with writes to exercise the backing mechanism specifically: whether it's the
-// unfair lock (all access exclusive) or the concurrent queue + barrier (concurrent readers, exclusive
-// writers), concurrent readers and writers still can't race. A real race here is caught by Thread
-// Sanitizer (`swift test --sanitize=thread`), not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test(arguments: mechanisms) func threadSafeDictionaryConcurrentReadsDuringWritesDoNotRace(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations * 2) { i in
@@ -190,9 +176,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary.dictionary == ["b": 2])
 }
 
-// Each iteration reads the current counter value then writes back the increment
-// (check-then-act). If `mutate` didn't hold the lock/queue for the whole closure,
-// concurrent increments could race and lose updates.
+// Check-then-act increments inside `mutate` must not lose updates.
 @Test(arguments: mechanisms) func threadSafeDictionaryMutateIsAtomicAcrossCompoundOperations(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations) { _ in
@@ -209,8 +193,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(ThreadSafe(["a": 1]) != ThreadSafe(["a": 1, "b": 2]))
 }
 
-// Auto-synthesized Equatable on a containing type only compiles because
-// ThreadSafe<[String: Int]> conforms to Equatable; this is the whole point of the feature.
+// Compiles only because `ThreadSafe<[String: Int]>` is Equatable.
 @Test func threadSafeDictionaryEquatableInsideContainingType() throws {
     struct Container: Equatable {
         let values: ThreadSafe<[String: Int]>
@@ -239,9 +222,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary["missing"] == 5)
 }
 
-// `d[k, default: 0] += 1` holds the write lock across the whole get-modify-set (see the
-// subscript's doc comment in ThreadSafe+Dictionary.swift), so many concurrent increments on the
-// same missing-then-created key must sum exactly.
+// Concurrent `d[k, default: 0] += 1` on a new key must sum exactly.
 @Test(arguments: mechanisms) func threadSafeDictionarySubscriptDefaultCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[String: Int]>(mechanism: mechanism)
     let workers = 8
@@ -285,8 +266,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary.dictionary == ["a": 1, "b": 2])
 }
 
-// Concurrent `reserveCapacity` calls interleaved with concurrent writes must not corrupt or
-// drop any write — `reserveCapacity` only affects unobservable storage capacity.
+// Concurrent `reserveCapacity` must not drop concurrent writes.
 @Test(arguments: mechanisms) func threadSafeDictionaryConcurrentReserveCapacityDoesNotCorruptConcurrentWrites(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
     let n = concurrencyIterations
@@ -307,8 +287,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(dictionary.dictionary == ["a": 2, "b": 3])
 }
 
-// Each writer merges a disjoint key range, so no `uniquingKeysWith` collision is ever exercised
-// concurrently — this is purely a lost-write check for the sequence-of-pairs overload.
+// Disjoint key ranges, so this only checks for lost writes.
 @Test(arguments: mechanisms) func threadSafeDictionaryConcurrentMergeSequenceOfPairsPreservesEveryEntry(mechanism: ThreadSafeMechanism) throws {
     let dictionary = ThreadSafe<[Int: Int]>(mechanism: mechanism)
     let writers = 8

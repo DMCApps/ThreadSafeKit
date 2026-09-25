@@ -2,8 +2,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Performance coverage for `ThreadSafeDictionary`: every public member stays within a generous
-// absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
+// Absolute-time ceilings for every `ThreadSafeDictionary` member.
 
 @Test(.tags(.performance))
 func dictionaryActorReadsAreFast() async {

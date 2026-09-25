@@ -122,10 +122,7 @@ import Testing
     #expect(await set.count == concurrencyIterations)
 }
 
-// Interleaves reads with writes (not just writes vs writes), proving mixed
-// operations don't deadlock or corrupt state under actor reentrancy. A real
-// race here is caught by Thread Sanitizer (`swift test --sanitize=thread`),
-// not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test func setActorConcurrentReadsDuringWritesDoNotRace() async throws {
     let set = ThreadSafeSet<Int>()
     await withTaskGroup(of: Void.self) { group in
@@ -196,8 +193,7 @@ import Testing
     #expect(await set.isEmpty)
 }
 
-// `removeFirst()` traps on an empty set, so this drains safely by calling it exactly once per
-// seeded element (one task per element) rather than looping each task to empty.
+// `removeFirst()` traps when empty, so call it once per seeded element.
 @Test func setActorConcurrentRemoveFirstDrainsExactlyOnce() async throws {
     let n = 2_000
     let set = ThreadSafeSet(0..<n)
@@ -222,8 +218,7 @@ import Testing
     #expect(await set.elements == [1, 2, 3])
 }
 
-// Concurrent `reserveCapacity` calls interleaved with concurrent inserts must not corrupt or
-// drop any insert — `reserveCapacity` only affects unobservable storage capacity.
+// Concurrent `reserveCapacity` must not drop concurrent inserts.
 @Test func setActorConcurrentReserveCapacityDoesNotCorruptConcurrentInserts() async throws {
     let set = ThreadSafeSet<Int>()
     let n = concurrencyIterations
@@ -245,10 +240,7 @@ import Testing
     #expect(await set.isEmpty)
 }
 
-// Every `removeAll(keepingCapacity:)` call unconditionally empties the set, so whichever call is
-// the LAST one in actor-serialized execution order leaves the set empty at that instant; only
-// inserts after that point can leave anything behind, and inserted values are always >= n — so no
-// original seed value can ever survive, deterministically, regardless of task interleaving.
+// Every call empties the set and inserts are >= n, so no seed value can survive.
 @Test func setActorRemoveAllKeepingCapacityConcurrentWithInsertsNeverLeavesSeedValues() async throws {
     let n = 600
     let k = 4

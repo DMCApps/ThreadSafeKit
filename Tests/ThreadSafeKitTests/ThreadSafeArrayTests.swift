@@ -69,10 +69,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
 private struct RemoveAllBoom: Error {}
 
-// `Array.removeAll(where:)` is not transactional: observed to partially reorder elements in place
-// before propagating a thrown error, e.g. [1,2,3,4,5,6] throwing on 4 came back as [1,3,2,4,5,6] —
-// same count, same element set, different order. So after the throw here, assert count/set
-// equality but deliberately not exact order.
+// `removeAll(where:)` may reorder before throwing, so only count and contents are asserted.
 @Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereReleasesLockWhenPredicateThrows(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([1, 2, 3, 4, 5, 6], mechanism: mechanism)
     #expect(throws: RemoveAllBoom.self) {
@@ -83,13 +80,12 @@ private struct RemoveAllBoom: Error {}
     }
     #expect(array.count == 6)
     #expect(Set(array.elements) == Set([1, 2, 3, 4, 5, 6]))
-    // A follow-up access succeeding (rather than deadlocking) is the actual proof the lock was released.
+    // Follow-up access proves the lock was released.
     array.append(7)
     #expect(array.count == 7)
 }
 
-// Real use case: k threads each remove their own residue class while other threads concurrently
-// append values >= N. Every original value must be gone; every appended value must survive.
+// Every original value must be removed and every concurrently appended value kept.
 @Test(arguments: mechanisms) func threadSafeArrayRemoveAllWhereConcurrentWithAppendsIsExact(mechanism: ThreadSafeMechanism) throws {
     let n = 600
     let k = 4
@@ -125,8 +121,6 @@ private struct RemoveAllBoom: Error {}
     #expect(array.elements == [1, 2, 3, 4])
 }
 
-// removeFirst()/removeLast() trap on an empty collection (unlike popLast(), the non-trapping variant),
-// so they're a distinct, worthwhile addition rather than a duplicate of popLast().
 @Test(arguments: mechanisms) func threadSafeArrayRemoveFirst(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([1, 2, 3], mechanism: mechanism)
     #expect(array.removeFirst() == 1)
@@ -271,12 +265,7 @@ private struct RemoveAllBoom: Error {}
     #expect(array.elements == [1, 20, 3])
 }
 
-// `array[0] += 1` holds the write lock across the whole get-modify-set (see the subscript's doc
-// comment in ThreadSafe+Array.swift) — unlike the old get/set-accessor subscript, concurrent
-// compound assignment through it can't lose updates.
-//
-// 8 workers each doing many *sequential* increments (rather than one `concurrentPerform`
-// iteration per increment) — matching `concurrentAppendsPreserveEveryElement`'s pattern above.
+// `array[0] += 1` holds the write lock across get-modify-set, so no increments are lost.
 @Test(arguments: mechanisms) func threadSafeArraySubscriptCompoundAssignmentIsAtomic(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([0], mechanism: mechanism)
     let workers = 8
@@ -287,10 +276,7 @@ private struct RemoveAllBoom: Error {}
     #expect(array[0] == workers * perWorker)
 }
 
-// Plain `array[i] = v` assignment running concurrently with readers must not corrupt the array
-// (each reader's snapshot always has the original element count) — mirrors
-// `threadSafeArrayConcurrentReadsDuringWritesDoNotRace` above, but exercising the subscript
-// setter specifically rather than `append`.
+// Concurrent subscript writes must not change the count seen by readers.
 @Test(arguments: mechanisms) func threadSafeArraySubscriptAssignmentIsSafeAlongsideConcurrentReaders(mechanism: ThreadSafeMechanism) throws {
     let writerCount = 8
     let array = ThreadSafe(Array(0..<writerCount), mechanism: mechanism)
@@ -315,18 +301,15 @@ private extension Int {
     }
 }
 
-// A throwing mutating call through the subscript's `_modify` must still release the write lock —
-// `_modify`'s `defer { endModify() }` runs on the throwing path exactly like any other `defer`.
+// `_modify`'s `defer` must release the write lock when the mutation throws.
 @Test(arguments: mechanisms) func threadSafeArraySubscriptModifyReleasesLockWhenMutatingCallThrows(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([0], mechanism: mechanism)
     #expect(throws: BumpError.self) {
         try array[0].bumpOrThrow()
     }
-    // The mutation before the throw is kept (`_modify` isn't transactional, matching `mutate`) —
-    // what's under test is that the lock was released, not that the throw rolled anything back.
+    // Mutation before the throw is kept; `_modify` isn't transactional.
     #expect(array[0] == 1)
-    // A follow-up access succeeding (rather than deadlocking or trapping on "already held") is
-    // the actual proof the lock was released.
+    // Follow-up access proves the lock was released.
     array[0] += 1
     #expect(array[0] == 2)
 }
@@ -339,10 +322,7 @@ private extension Int {
     #expect(array.count == concurrencyIterations)
 }
 
-// Interleaves reads with writes to exercise the backing mechanism specifically: whether it's the
-// unfair lock (all access exclusive) or the concurrent queue + barrier (concurrent readers, exclusive
-// writers), concurrent readers and writers still can't race. A real race here is caught by Thread
-// Sanitizer (`swift test --sanitize=thread`), not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test(arguments: mechanisms) func threadSafeArrayConcurrentReadsDuringWritesDoNotRace(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations * 2) { i in
@@ -370,9 +350,7 @@ private extension Int {
     #expect(array.elements == [1, 2, 3, 6])
 }
 
-// Each iteration reads the current count then appends it (check-then-act). If `mutate`
-// didn't hold the lock/queue for the whole closure, two iterations could read the same
-// count and append duplicate values, leaving gaps/dupes instead of a clean permutation of 0..<N.
+// Check-then-act inside `mutate` must yield a clean permutation of 0..<N.
 @Test(arguments: mechanisms) func threadSafeArrayMutateIsAtomicAcrossCompoundOperations(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe<[Int]>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations) { _ in
@@ -389,8 +367,7 @@ private extension Int {
     #expect(ThreadSafe([1, 2, 3]) != ThreadSafe([3, 2, 1]))
 }
 
-// Auto-synthesized Equatable on a containing type only compiles because
-// ThreadSafe<[Int]> conforms to Equatable; this is the whole point of the feature.
+// Compiles only because `ThreadSafe<[Int]>` is Equatable.
 @Test func threadSafeArrayEquatableInsideContainingType() throws {
     struct Container: Equatable {
         let items: ThreadSafe<[Int]>
@@ -417,9 +394,7 @@ private extension Int {
     #expect(array.elements == [3, 2, 1])
 }
 
-// 8 workers × 250 swaps of indices 0 and 1 is an even total, so the array must end in its start
-// order. A `swapAt` that didn't hold the write lock across the whole swap could lose or duplicate
-// an element instead.
+// An even number of swaps must restore the original order.
 @Test(arguments: mechanisms) func threadSafeArrayConcurrentSwapAtNeverLosesElements(mechanism: ThreadSafeMechanism) throws {
     let array = ThreadSafe([0, 1], mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: 8) { _ in

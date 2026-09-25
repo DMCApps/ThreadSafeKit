@@ -2,11 +2,7 @@ import Foundation
 import Testing
 @testable import ThreadSafeKit
 
-// Coverage for Value == Optional<T> (both the wrapped value itself being optional, and
-// collections whose element/keyed-value is optional). `storage: Value` is a plain, non-optional
-// stored property (see ThreadSafe.swift), so there's no separate "is it populated" wrapper layer
-// to get confused with the real, possibly-nil `Value` — this just verifies the wrapped nil itself
-// is handled correctly end to end (init, mutate, read) across every mechanism.
+// Coverage for optional wrapped values and optional elements across every mechanism.
 
 private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
 
@@ -31,9 +27,7 @@ func optionalValueMutateToNilAndBackDoesNotCrash(mechanism: ThreadSafeMechanism)
 
 @Test(arguments: mechanisms)
 func optionalValueConcurrentNilTogglingNeverCrashesOrTraps(mechanism: ThreadSafeMechanism) {
-    // Repeatedly flips between nil and a value while readers hammer `wrappedValue`. This is
-    // exactly the shape that would force-unwrap-crash if `read`/`write` ever confused an
-    // internal "populated" sentinel with the value's own nil.
+    // Flipping nil/non-nil under concurrent reads must not crash.
     let box = ThreadSafe<Int?>(wrappedValue: nil, mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: 16) { i in
         if i % 2 == 0 {
@@ -49,8 +43,7 @@ func optionalValueConcurrentNilTogglingNeverCrashesOrTraps(mechanism: ThreadSafe
 }
 
 // MARK: - Optional array shape: ThreadSafe<[Int]?>
-// `Optional<[Int]>` is not itself a Collection, so this only gets the base row
-// (wrappedValue/mutate/description) — no append/count/etc.
+// `Optional<[Int]>` isn't a Collection, so only base members apply.
 
 @Test(arguments: mechanisms)
 func optionalArrayStartsNilAndCanBeInitializedViaMutate(mechanism: ThreadSafeMechanism) {
@@ -84,8 +77,7 @@ func optionalArrayConcurrentNilTogglingNeverCrashes(mechanism: ThreadSafeMechani
 }
 
 // MARK: - Optional dictionary shape: ThreadSafe<[String: Int]?>
-// Same story as the array: Optional<[Key: Value]> isn't itself keyed storage, so only the
-// base row is available.
+// `Optional<[Key: Value]>` isn't keyed storage, so only base members apply.
 
 @Test(arguments: mechanisms)
 func optionalDictionaryStartsNilAndCanBeInitializedViaMutate(mechanism: ThreadSafeMechanism) {
@@ -119,8 +111,7 @@ func optionalDictionaryConcurrentNilTogglingNeverCrashes(mechanism: ThreadSafeMe
 }
 
 // MARK: - Array of optionals: ThreadSafe<[Int?]>
-// The collection itself is non-optional, so the full array shape (append/pop/subscript/etc.)
-// applies; the element type happens to be optional.
+// A non-optional array of optionals gets the full array API.
 
 @Test(arguments: mechanisms)
 func arrayOfOptionalsSupportsNilElements(mechanism: ThreadSafeMechanism) {
@@ -145,10 +136,7 @@ func arrayOfOptionalsConcurrentAppendIncludingNilNeverCrashes(mechanism: ThreadS
 }
 
 // MARK: - Dictionary of optional values: ThreadSafe<[String: Int?]>
-// Genuinely subtle: `Value.KeyedValue` is itself `Int?`, so the keyed subscript
-// takes `Int??` — a key can be ABSENT (removeValue / subscript assignment to nil) or
-// PRESENT-with-a-nil-value (subscript assignment to `Int?.none`). These are different
-// states; both must be reachable without crashing.
+// `Int?` values make the subscript take `Int??`, so absent and present-nil keys must both work.
 
 @Test(arguments: mechanisms)
 func dictionaryOfOptionalValuesDistinguishesAbsentFromPresentNil(mechanism: ThreadSafeMechanism) {

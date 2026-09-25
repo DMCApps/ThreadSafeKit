@@ -2,8 +2,7 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Performance coverage for `ThreadSafeArray`: every public member stays within a generous
-// absolute-time ceiling for an actor hop (see `assertFast`'s async overload in TestSupport.swift).
+// Absolute-time ceilings for every `ThreadSafeArray` member.
 
 @Test(.tags(.performance))
 func arrayActorReadsAreFast() async {
@@ -30,10 +29,7 @@ func arrayActorWritesAreFast() async {
     await assertFast("removeFirst") { await array.append(0); _ = await array.removeFirst() }
     await assertFast("removeLast") { await array.append(0); _ = await array.removeLast() }
     await assertFast("reserveCapacity") { await array.reserveCapacity(10) }
-    // reverse/sort/shuffle go through generic MutableCollection & RandomAccessCollection dispatch
-    // (vs. append/pop's directly-specialized calls) and shuffle additionally draws from the system
-    // RNG, so all three carry real per-call overhead beyond the 300us ceiling tuned for simple actor
-    // hops — ceilings widened further to also clear `--sanitize=thread`'s per-call instrumentation cost.
+    // Wider ceilings: generic dispatch, RNG, and TSan overhead.
     await assertFast("reverse", maxMicroseconds: 1_500) { await array.reverse() }
     await assertFast("sort", maxMicroseconds: 3_000) { await array.sort() }
     await assertFast("sort(by:)", maxMicroseconds: 3_000) { await array.sort(by: <) }

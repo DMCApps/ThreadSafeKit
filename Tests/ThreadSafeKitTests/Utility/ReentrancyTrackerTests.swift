@@ -4,17 +4,12 @@ import Testing
 
 @testable import ThreadSafeKit
 
-// Direct coverage for `ReentrancyTracker` itself (Sources/ThreadSafeKit/Utility/ReentrancyTracker.swift),
-// isolated from `ThreadSafe`'s own read/write/modify plumbing. Every test that gets a successful
-// `beginAccess` pairs it with an `endAccess` before returning, so it doesn't leave a stale entry in
-// this thread's tracker state for whichever other test next reuses the same thread.
+// Direct `ReentrancyTracker` coverage; every successful `beginAccess` is paired with `endAccess`.
 
 // `@unchecked`: stateless, only ever used for its identity (`ObjectIdentifier`).
 private final class Probe: @unchecked Sendable {}
 
-// `@unchecked`: `value` is written on the spawned thread, then read on the caller's thread only
-// after `done.wait()` returns — the semaphore signal/wait pair is what actually establishes the
-// happens-before edge the compiler can't see here.
+// `@unchecked`: the semaphore orders the cross-thread write before the read.
 private final class Box<Value>: @unchecked Sendable {
     var value: Value
     init(_ value: Value) { self.value = value }
@@ -60,14 +55,7 @@ func endAccessOnlyClearsTheGivenInstance() {
     ReentrancyTracker.endAccess(probeB)
 }
 
-// Tracking is per-OS-thread, not global/per-instance-only: a different thread must be free to
-// begin its own access to an instance that's active on this thread. (This is exactly the property
-// that makes concurrent, non-reentrant callers on different threads unaffected by the tracker.)
-//
-// Uses `Thread.detachNewThread`, not `DispatchQueue.global().sync` — GCD's `sync` can (and,
-// measurably, sometimes does) run the block inline on the calling thread rather than handing off
-// to a different one, which would make this test meaningless. A freshly-spawned `Thread` is
-// guaranteed to be a different OS thread from the one that spawned it.
+// Tracking is per thread, so another thread may access an instance active here (real thread, since GCD `sync` can run inline).
 @Test(.timeLimit(.minutes(1)))
 func trackingIsPerThreadNotGlobal() {
     let probe = Probe()
@@ -88,9 +76,7 @@ func trackingIsPerThreadNotGlobal() {
     ReentrancyTracker.endAccess(probe)
 }
 
-// `Box`'s inline capacity is 4 — nest more than that on one thread to force the heap-array
-// overflow path, and confirm it behaves identically to the inline path: every `beginAccess`
-// succeeds while nested, and unwinding in the same order frees each one for reuse.
+// Nest past the inline capacity of 4 to hit the heap overflow path.
 @Test
 func nestingBeyondInlineCapacitySucceedsAndUnwindsCleanly() {
     let probes = (0..<9).map { _ in Probe() }
@@ -110,10 +96,7 @@ func nestingBeyondInlineCapacitySucceedsAndUnwindsCleanly() {
     }
 }
 
-// Removing an instance that overflowed into the heap array, while other overflowed instances
-// are still active, must only clear that one instance — exercises `Box.remove`'s overflow branch
-// specifically (as opposed to the inline-slot branch already covered by
-// `endAccessOnlyClearsTheGivenInstance`).
+// Removing an overflowed instance must clear only that instance.
 @Test
 func removingOneOverflowedInstanceLeavesOthersActive() {
     let probes = (0..<6).map { _ in Probe() } // capacity is 4, so probes[4...] overflow
@@ -131,8 +114,7 @@ func removingOneOverflowedInstanceLeavesOthersActive() {
     }
 }
 
-// Many distinct instances, all concurrently active on many distinct threads, must never
-// false-positive against each other — only true same-thread/same-instance reentry should fail.
+// Distinct instances on distinct threads must never false-positive.
 @Test(.timeLimit(.minutes(1)))
 func manyConcurrentNonReentrantInstancesNeverFalsePositive() {
     let workers = 16

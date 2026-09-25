@@ -1,6 +1,4 @@
-/// `mutate` and the read-only `Collection` members come from `_ThreadSafeActorStorage`'s protocol
-/// extension — see that type's doc comment for the `final`/`@inlinable`/`_storage` rationale shared
-/// by all four actor types.
+/// Actor-backed set; shared members come from `_ThreadSafeActorStorage`.
 public final actor ThreadSafeSet<Element: Hashable & Sendable>: _ThreadSafeActorStorage {
     public var _storage: Set<Element>
 

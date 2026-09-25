@@ -127,10 +127,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.count == concurrencyIterations)
 }
 
-// Interleaves reads with writes to exercise the backing mechanism specifically: whether it's the
-// unfair lock (all access exclusive) or the concurrent queue + barrier (concurrent readers, exclusive
-// writers), concurrent readers and writers still can't race. A real race here is caught by Thread
-// Sanitizer (`swift test --sanitize=thread`), not just by a dropped-write count.
+// Mixed concurrent reads and writes must not corrupt state; run under TSan to catch races.
 @Test(arguments: mechanisms) func threadSafeSetConcurrentReadsDuringWritesDoNotRace(mechanism: ThreadSafeMechanism) throws {
     let set = ThreadSafe<Set<Int>>(mechanism: mechanism)
     DispatchQueue.concurrentPerform(iterations: concurrencyIterations * 2) { i in
@@ -161,8 +158,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(ThreadSafe(Set([1, 2, 3])) != ThreadSafe(Set([1, 2])))
 }
 
-// Auto-synthesized Equatable on a containing type only compiles because
-// ThreadSafe<Set<Int>> conforms to Equatable; this is the whole point of the feature.
+// Compiles only because `ThreadSafe<Set<Int>>` is Equatable.
 @Test func threadSafeSetEquatableInsideContainingType() throws {
     struct Container: Equatable {
         let members: ThreadSafe<Set<Int>>
@@ -220,10 +216,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.isEmpty)
 }
 
-// `removeFirst()` traps on an empty set (unlike `popFirst()`), so this drains safely by calling
-// it exactly once per seeded element — one `concurrentPerform` iteration per element, rather than
-// looping each worker to empty — instead of a racy isEmpty-then-removeFirst check-then-act.
-// Concurrent calls must still remove every element exactly once, no duplicates, no drops.
+// `removeFirst()` traps when empty, so call it once per seeded element.
 @Test(arguments: mechanisms) func threadSafeSetConcurrentRemoveFirstDrainsExactlyOnce(mechanism: ThreadSafeMechanism) throws {
     let n = 2_000
     let set = ThreadSafe(Set(0..<n), mechanism: mechanism)
@@ -242,8 +235,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.wrappedValue == [1, 2, 3])
 }
 
-// Concurrent `reserveCapacity` calls interleaved with concurrent inserts must not corrupt or
-// drop any insert — `reserveCapacity` only affects unobservable storage capacity.
+// Concurrent `reserveCapacity` must not drop concurrent inserts.
 @Test(arguments: mechanisms) func threadSafeSetConcurrentReserveCapacityDoesNotCorruptConcurrentInserts(mechanism: ThreadSafeMechanism) throws {
     let set = ThreadSafe<Set<Int>>(mechanism: mechanism)
     let n = concurrencyIterations
@@ -264,10 +256,7 @@ private let mechanisms: [ThreadSafeMechanism] = [.lock, .readerWriterLock]
     #expect(set.isEmpty)
 }
 
-// Every `removeAll(keepingCapacity:)` call unconditionally empties the set, so whichever call is
-// the LAST one in the actual (lock-enforced) execution order leaves the set empty at that instant;
-// only inserts after that point can leave anything behind, and inserted values are always >= n —
-// so no original seed value can ever survive, deterministically, regardless of interleaving.
+// Every call empties the set and inserts are >= n, so no seed value can survive.
 @Test(arguments: mechanisms) func threadSafeSetRemoveAllKeepingCapacityConcurrentWithInsertsNeverLeavesSeedValues(mechanism: ThreadSafeMechanism) throws {
     let n = 600
     let k = 4
