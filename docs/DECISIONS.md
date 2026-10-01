@@ -55,3 +55,9 @@ Approaches that were tried or proposed and then rejected, with the reason for ea
 - **Tried:** `ThreadSafe` being `Sendable` only when `Value: Sendable`.
 - **Rejected because:** it forced `withLockUnchecked` throughout, which moves the safety check from the compiler to the author.
 - **Instead:** `Value: Sendable` is required everywhere.
+
+## Same-type generic methods for shape-only members (`where Value == Set<E>`)
+
+- **Tried:** members like `popFirst` and `mapValues` in an unconstrained `extension ThreadSafe`, gated per method with `where Value == [Key: KeyedValue]` or `where Value == Set<Element>`.
+- **Rejected because:** code completion doesn't prune by a method's same-type clause, so `ThreadSafe(1).` listed every one of them (verified with `sourcekit-lsp`).
+- **Instead:** members go in constrained extensions over `_ThreadSafeKeyedStorage` / `_ThreadSafeSetStorage`, which completion does filter; `shapeMembersUseConstrainedExtensions` enforces this.

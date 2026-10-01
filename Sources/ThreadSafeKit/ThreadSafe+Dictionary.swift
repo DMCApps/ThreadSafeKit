@@ -1,5 +1,5 @@
 /// Structural stand-in for `Dictionary` so keyed members can be generic; public only because public signatures use it.
-public protocol _ThreadSafeKeyedStorage {
+public protocol _ThreadSafeKeyedStorage: Collection where Element == (key: Key, value: KeyedValue) {
     associatedtype Key: Hashable
     associatedtype KeyedValue
     associatedtype Keys: Collection where Keys.Element == Key
@@ -13,6 +13,15 @@ public protocol _ThreadSafeKeyedStorage {
     mutating func merge(_ other: Self, uniquingKeysWith combine: (KeyedValue, KeyedValue) throws -> KeyedValue) rethrows
     @discardableResult
     mutating func updateValue(_ value: KeyedValue, forKey key: Key) -> KeyedValue?
+    func mapValues<T>(_ transform: (KeyedValue) throws -> T) rethrows -> [Key: T]
+    func compactMapValues<T>(_ transform: (KeyedValue) throws -> T?) rethrows -> [Key: T]
+    func filter(_ isIncluded: (Element) throws -> Bool) rethrows -> [Key: KeyedValue]
+    mutating func reserveCapacity(_ minimumCapacity: Int)
+    mutating func popFirst() -> Element?
+    mutating func merge<S: Sequence>(
+        _ other: S, uniquingKeysWith combine: (KeyedValue, KeyedValue) throws -> KeyedValue
+    ) rethrows where S.Element == (Key, KeyedValue)
+    subscript(key: Key, default defaultValue: @autoclosure () -> KeyedValue) -> KeyedValue { get set }
 }
 
 extension Dictionary: _ThreadSafeKeyedStorage {
@@ -70,58 +79,44 @@ where Value: _ThreadSafeKeyedStorage, Value.Key: Sendable, Value.KeyedValue: Sen
             yield &storage[key]
         }
     }
-}
 
-// These don't generalize to `_ThreadSafeKeyedStorage`, so they're constrained to concrete `Dictionary`.
-extension ThreadSafe {
     @inlinable
-    public func mapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
-        _ transform: @Sendable (KeyedValue) throws -> T
-    ) rethrows -> [Key: T] where Value == [Key: KeyedValue] {
+    public func mapValues<T: Sendable>(_ transform: @Sendable (Value.KeyedValue) throws -> T) rethrows -> [Value.Key: T] {
         try read { try $0.mapValues(transform) }
     }
 
     @inlinable
-    public func compactMapValues<Key: Hashable & Sendable, KeyedValue: Sendable, T: Sendable>(
-        _ transform: @Sendable (KeyedValue) throws -> T?
-    ) rethrows -> [Key: T] where Value == [Key: KeyedValue] {
+    public func compactMapValues<T: Sendable>(_ transform: @Sendable (Value.KeyedValue) throws -> T?) rethrows -> [Value.Key: T] {
         try read { try $0.compactMapValues(transform) }
     }
 
     @inlinable
-    public func filter<Key: Hashable & Sendable, KeyedValue: Sendable>(
-        _ isIncluded: @Sendable ((key: Key, value: KeyedValue)) throws -> Bool
-    ) rethrows -> [Key: KeyedValue] where Value == [Key: KeyedValue] {
+    public func filter(_ isIncluded: @Sendable (Value.Element) throws -> Bool) rethrows -> [Value.Key: Value.KeyedValue] {
         try read { try $0.filter(isIncluded) }
     }
 
     @inlinable
-    public func reserveCapacity<Key: Hashable & Sendable, KeyedValue: Sendable>(
-        _ minimumCapacity: Int
-    ) where Value == [Key: KeyedValue] {
+    public func reserveCapacity(_ minimumCapacity: Int) {
         write { $0.reserveCapacity(minimumCapacity) }
     }
 
     @inlinable
-    public func popFirst<Key: Hashable & Sendable, KeyedValue: Sendable>() -> (key: Key, value: KeyedValue)?
-    where Value == [Key: KeyedValue] {
+    public func popFirst() -> Value.Element? {
         write { $0.popFirst() }
     }
 
     /// Sequence-of-pairs overload; never ambiguous with the `Dictionary` one since the element tuple labels differ.
     @inlinable
-    public func merge<Key: Hashable & Sendable, KeyedValue: Sendable>(
-        _ other: some Sequence<(Key, KeyedValue)> & Sendable,
-        uniquingKeysWith combine: @Sendable (KeyedValue, KeyedValue) throws -> KeyedValue
-    ) rethrows where Value == [Key: KeyedValue] {
+    public func merge(
+        _ other: some Sequence<(Value.Key, Value.KeyedValue)> & Sendable,
+        uniquingKeysWith combine: @Sendable (Value.KeyedValue, Value.KeyedValue) throws -> Value.KeyedValue
+    ) rethrows {
         try write { try $0.merge(other, uniquingKeysWith: combine) }
     }
 
     /// Atomic across the whole get-modify-set, so `d[k, default: 0] += 1` is safe.
     @inlinable
-    public subscript<Key: Hashable & Sendable, KeyedValue: Sendable>(
-        key: Key, default defaultValue: @autoclosure () -> KeyedValue
-    ) -> KeyedValue where Value == [Key: KeyedValue] {
+    public subscript(key: Value.Key, default defaultValue: @autoclosure () -> Value.KeyedValue) -> Value.KeyedValue {
         get { read { $0[key] } ?? defaultValue() }
         _modify {
             beginModify()

@@ -53,6 +53,16 @@ private func librarySources() throws -> [(path: String, lines: [String])] {
     #expect(nonFinal.isEmpty, "Public actors must be `final` (see README Contributing):\n\(nonFinal.joined(separator: "\n"))")
 }
 
+@Test func shapeMembersUseConstrainedExtensions() throws {
+    var offenders: [String] = []
+    for (path, lines) in try librarySources() {
+        for (index, line) in lines.enumerated() where line.contains("where Value ==") {
+            offenders.append("\(path):\(index + 1): \(line.trimmingCharacters(in: .whitespaces))")
+        }
+    }
+    #expect(offenders.isEmpty, "Same-type `where Value ==` members leak into autocomplete on every ThreadSafe (see docs/DECISIONS.md):\n\(offenders.joined(separator: "\n"))")
+}
+
 @Test func conformancesAreDeliberate() {
     // Checked through `Any.Type` so the compiler can't fold the casts; see docs/DECISIONS.md for why each is absent.
     let types: [Any.Type] = [
