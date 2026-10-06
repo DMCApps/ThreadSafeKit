@@ -102,33 +102,42 @@ extension ThreadSafe where Value: SetAlgebra, Value.Element: Sendable {
     }
 }
 
-// Not part of `SetAlgebra`, so constrained to concrete `Set`.
-extension ThreadSafe {
+/// Structural stand-in for `Set` so members outside `SetAlgebra` can be generic; public only because public signatures use it.
+public protocol _ThreadSafeSetStorage: SetAlgebra, Collection {
+    mutating func popFirst() -> Element?
+    @discardableResult
+    mutating func removeFirst() -> Element
+    func filter(_ isIncluded: (Element) throws -> Bool) rethrows -> Self
+    mutating func reserveCapacity(_ minimumCapacity: Int)
+    mutating func removeAll(keepingCapacity keepCapacity: Bool)
+}
+
+extension Set: _ThreadSafeSetStorage {}
+
+extension ThreadSafe where Value: _ThreadSafeSetStorage, Value.Element: Sendable {
     @inlinable
-    public func popFirst<Element: Hashable & Sendable>() -> Element? where Value == Set<Element> {
+    public func popFirst() -> Value.Element? {
         write { $0.popFirst() }
     }
 
     @discardableResult
     @inlinable
-    public func removeFirst<Element: Hashable & Sendable>() -> Element where Value == Set<Element> {
+    public func removeFirst() -> Value.Element {
         write { $0.removeFirst() }
     }
 
     @inlinable
-    public func filter<Element: Hashable & Sendable>(
-        _ isIncluded: @Sendable (Element) throws -> Bool
-    ) rethrows -> Set<Element> where Value == Set<Element> {
+    public func filter(_ isIncluded: @Sendable (Value.Element) throws -> Bool) rethrows -> Value {
         try read { try $0.filter(isIncluded) }
     }
 
     @inlinable
-    public func reserveCapacity<Element: Hashable & Sendable>(_ minimumCapacity: Int) where Value == Set<Element> {
+    public func reserveCapacity(_ minimumCapacity: Int) {
         write { $0.reserveCapacity(minimumCapacity) }
     }
 
     @inlinable
-    public func removeAll<Element: Hashable & Sendable>(keepingCapacity keepCapacity: Bool = false) where Value == Set<Element> {
+    public func removeAll(keepingCapacity keepCapacity: Bool = false) {
         write { $0.removeAll(keepingCapacity: keepCapacity) }
     }
 }
